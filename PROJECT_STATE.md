@@ -43,49 +43,74 @@ clean, nothing uncommitted). Diff vs the stable checkpoint (`94f6a69`): 49 files
   gracefully to "that provider contributed nothing" rather than breaking the page or fabricating
   articles, but this still needs a real check once deployed (see next actions).
 
-### What remains — THE DEPLOYMENT PROBLEM (this is the actual blocker right now)
+### What remains — THE DEPLOYMENT PROBLEM (root cause now confirmed; blocked on one user action)
 
-**Preview deployment has not succeeded.** Four direct attempts and two subagent attempts this session
-all failed:
-- Four direct `mcp__Vercel__deploy_to_vercel` calls from the main session each truncated the ~76-file
-  payload partway through (the tool has no incremental/diff mode — it replaces the entire remote file
-  tree on every call, so a partial file list reliably fails the Next.js build with `module_not_found`).
-  Resulting error deployments (harmless, no cleanup needed): `dpl_7kZ6Qrb4oYL8veAfptiBQ916rLS6`,
-  `dpl_DdKiKoqVupCqqq2iiqsY2ttPSDc9`, `dpl_932dV6Y5rJ2AwH2Asno5CvzKX7eC`, `dpl_3MvGtnquGzJzzZh1bNXTsBniueQU`.
-- A subagent delegated the same task once and hit a hard account-level rate limit (HTTP 429, "session
-  limit... resets 6:30am UTC") before it could finish assembling the payload.
-- A second subagent retry was stopped by explicit user instruction before it could attempt the call, to
-  stop burning usage on this in the current session.
-- **Root cause is payload size, not a code problem.** The local build is verified green at this exact
-  commit. `create_git_project` (linking this Vercel project to GitHub so it deploys from a push) was
-  considered and deliberately NOT used — it risks changing which branch this canonical project treats as
-  "Production" without a safe way to verify that from here, which conflicts with "do not touch Production
-  during this phase."
-- Production is untouched and remains exactly at the stable checkpoint above
-  (`dpl_64zqH1x75pWLFRsNND2CpWH7sEfS`, commit `94f6a69`, live at
-  `https://snk-life-os-final-stable2.vercel.app`).
+**Preview deployment has still not succeeded, but the root cause is now confirmed** (not guessed):
+`mcp__Vercel__deploy_to_vercel` requires the ENTIRE ~83-file / 317KB source tree inlined as text in one
+tool call (no incremental/diff mode). Emitting that much text in a single assistant turn hit a hard
+per-turn output ceiling in this harness — confirmed identically from three different callers (the main
+session, twice, and a dedicated subagent given a completely fresh context/budget) — each got a handful
+of files in (2 to ~27) before the response cut off, never close to all 83. This is an environment/harness
+limit, not a retryable transient error, and not fixable by better formatting, minification, or delegating
+to another agent — a subagent hit the exact same wall. Six failed attempts total this session produced
+harmless error deployments (`dpl_7kZ6Qrb4oYL8veAfptiBQ916rLS6`, `dpl_DdKiKoqVupCqqq2iiqsY2ttPSDc9`,
+`dpl_932dV6Y5rJ2AwH2Asno5CvzKX7eC`, `dpl_3MvGtnquGzJzzZh1bNXTsBniueQU`, `dpl_EJvjGArb4eoZ8ojy3XVf7sUWmhMY`,
+`dpl_7S3QSi67DZW2ouRfmSt4eYoNppJe`) — no cleanup needed, they don't affect Production.
 
-### Exact next step (start here next session)
+**Other routes ruled out:**
+- The Vercel CLI (`npx vercel`) would sidestep this entirely (it reads files from local disk, no
+  serialization through model output) — but this sandbox's network egress proxy explicitly blocks
+  `api.vercel.com` (confirmed via a direct test: `connect_rejected`, organization policy), so the CLI
+  cannot reach Vercel's API from here regardless of authentication.
+- `mcp__Vercel__create_git_project` was considered again and re-confirmed unsafe: its own tool
+  description states it "does not reconnect an existing unlinked project with the same name" — since
+  `snk-life-os-final-stable2` is currently unlinked, calling it would create a **new, separate** Vercel
+  project, which is explicitly forbidden (canonical project only, no new project ever). No other MCP tool
+  can link an existing Vercel project to a repo.
 
-1. Retry `mcp__Vercel__deploy_to_vercel` (target=`preview`, name=`snk-life-os-final-stable2`,
-   teamId=`team_Xa2lB3AEknYc1qIFPeQ2IHtF`, projectSettings.framework=`nextjs`) with the **complete**
-   ~76-file tree from commit `b97faf8` (`git ls-files` on that commit minus `.gitignore`,
-   `.env.example`, `index.html`, `package-lock.json`, `next-env.d.ts`). Whatever approach is used
-   (direct call, or a subagent with fresh budget), it must produce ONE call containing every file —
-   there is no incremental mode, a partial list fails the build every time. Consider: a fresh session
-   has a full usage budget, which may simply avoid the truncation problem outright.
-2. Once READY, verify like the Production promotion was verified: fetch `/login` and `/tasks` (protected
+**The fix that works: link the existing Vercel project to GitHub via the dashboard (one manual click,
+not a credential).** GitHub already has the complete, correct code (git push works from local disk, so
+it never hit the payload-size wall) — once Vercel is watching the repo, it deploys by pulling from GitHub
+itself, and no MCP call ever needs to carry file contents again. This was sent to the user as a direct
+link (`https://vercel.com/7hchbrnqkg-4613/snk-life-os-final-stable2/settings/git`) with instructions to
+connect `snkpcn/snk-life-os` and — important — leave the Production Branch as `main` (the old stale
+prototype branch that nothing pushes to), so linking cannot affect the current manually-promoted
+Production deployment; only pushes to feature branches like `claude/snk-life-os-i18n-news` will produce
+Preview deployments automatically. **Waiting on the user to complete this step.**
+
+Production is untouched and remains exactly at the stable checkpoint above
+(`dpl_64zqH1x75pWLFRsNND2CpWH7sEfS`, commit `94f6a69`, live at `https://snk-life-os-final-stable2.vercel.app`).
+
+### Exact next step (start here next session, or once the user confirms the Git link is connected)
+
+1. Confirm the project is now git-linked: `mcp__Vercel__get_git_deployment_context` should show it under
+   `linkedProjects` for this team (it showed `[]` before linking).
+2. Trigger a Preview build of the current branch: either wait for the user to say Vercel already shows a
+   deployment, or push a trivial no-op commit to `claude/snk-life-os-i18n-news` to fire the webhook, then
+   poll `mcp__Vercel__list_deployments` (filtered to this project) for the new one.
+3. Once READY, verify like the Production promotion was verified: fetch `/login` and `/tasks` (protected
    redirect), a JS chunk (no signup, hardening intact), TH default language, EN switch, a real
-   create/save/refresh on something simple, and open `/news` to confirm the RSS providers actually
-   return real articles (this is the one thing that could not be verified at all this session — first
-   real look at whether the Thai Rath / Bangkok Post / BBC feed URLs actually work).
-3. Full bilingual + News QA per the original Phase 2 spec (language switch + refresh + logout/login
-   persistence, every News action, mobile breakpoints) before considering Preview QA passed.
-4. Only after explicit Preview QA sign-off: promote to Production on the same project, exactly as the
+   create/save/refresh on something simple, and open `/news` to confirm the RSS providers actually return
+   real articles (this could not be checked at all this session — first real look at whether the Thai
+   Rath / Bangkok Post / BBC feed URLs actually work) and `/schedule` to confirm a recurring event's
+   occurrences actually expand correctly.
+4. Full bilingual + News + recurring-Schedule QA per the checklist already sent to the user (language
+   switch + refresh + logout/login persistence, every News action, every Schedule recurrence/edit-scope
+   action, mobile breakpoints) before considering Preview QA passed.
+5. Only after explicit Preview QA sign-off: promote to Production on the same project, exactly as the
    Phase 1 checkpoint was promoted, then re-verify Production.
-5. `ANTHROPIC_API_KEY` still needs to be set as a Vercel env var (unchanged ask from before) — without
+6. `ANTHROPIC_API_KEY` still needs to be set as a Vercel env var (unchanged ask from before) — without
    it, the News brief and "why this matters to me" fall back to their honest non-AI/not-connected states
    rather than crashing, but won't be using AI until it's set.
+
+### Known scope trade-off from this session (recurring Schedule)
+
+The new bespoke Schedule page (`components/schedule-board.tsx`) does not carry over `business_id`/
+`project_id` linking that the old generic-resource-engine Schedule page had — dropped to keep the
+recurrence UI shippable in this session. Not wired into the Timeline page's chronological merge yet
+either (Timeline still reads raw `schedule_events` rows, so a recurring event only appears there on its
+literal first occurrence date, not every occurrence) — Today's Now/Next/Schedule sections were fixed to
+expand recurring occurrences correctly, Timeline was not, given time. Worth a follow-up pass.
 
 ## ✅ STABLE PRODUCTION CHECKPOINT (2026-09-02)
 
