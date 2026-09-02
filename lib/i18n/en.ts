@@ -241,7 +241,14 @@ export const en = {
     subtitle: "Thai stocks · US stocks · Gold · USD/THB",
     priceAlerts: "Price Alerts",
     tabOverview: "Overview",
+    tabGold: "Gold",
+    tabFx: "FX",
     tabCrypto: "Crypto",
+  },
+  goldFxPage: {
+    indicativeLabel: "Indicative / Estimated",
+    indicativeDisclaimer:
+      "Calculated from XAU/USD × USD/THB and standard weight conversion — not the official Gold Traders Association of Thailand price.",
   },
   cryptoPage: {
     title: "Crypto",

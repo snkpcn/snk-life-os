@@ -213,3 +213,74 @@ export async function fetchChart(symbol: string, market: StockMarket, range: Sto
 export async function fetchDetailQuote(symbol: string, market: StockMarket): Promise<StockQuote | null> {
   return fetchQuoteFromChartMeta(symbol, market);
 }
+
+/** A quote for a raw Yahoo symbol with no `.BK`/market suffix logic — used for FX pairs and
+ * commodities (e.g. "XAUUSD=X", "THB=X"), which aren't equities and don't belong to a
+ * StockMarket ("TH"/"US"). Kept separate from the stock-quote functions above so nothing about
+ * the working stock-quote path changes. */
+export type RawInstrumentQuote = {
+  symbol: string;
+  name: string;
+  price: number | null;
+  change: number | null;
+  changePercent: number | null;
+  dayHigh: number | null;
+  dayLow: number | null;
+  currency: string;
+  exchange: string | null;
+  marketState: StockQuote["marketState"];
+  source: string;
+  updatedAt: string;
+};
+
+export async function fetchRawInstrumentQuote(yahooSymbol: string, displaySymbol: string, displayName: string, fallbackCurrency: string): Promise<RawInstrumentQuote | null> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=5d&interval=1d`;
+  const data = await fetchJson(url, 45);
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta) return null;
+
+  const returnedSymbol = String(meta.symbol || "").toUpperCase();
+  if (returnedSymbol && returnedSymbol !== yahooSymbol.toUpperCase()) return null;
+
+  const price = typeof meta.regularMarketPrice === "number" ? meta.regularMarketPrice : null;
+  const previousClose = typeof meta.previousClose === "number" ? meta.previousClose : typeof meta.chartPreviousClose === "number" ? meta.chartPreviousClose : null;
+  const change = price !== null && previousClose !== null ? price - previousClose : null;
+  const changePercent = change !== null && previousClose !== null && previousClose !== 0 ? (change / previousClose) * 100 : null;
+
+  return {
+    symbol: displaySymbol,
+    name: displayName,
+    price,
+    change,
+    changePercent,
+    dayHigh: typeof meta.regularMarketDayHigh === "number" ? meta.regularMarketDayHigh : null,
+    dayLow: typeof meta.regularMarketDayLow === "number" ? meta.regularMarketDayLow : null,
+    currency: meta.currency || fallbackCurrency,
+    exchange: meta.fullExchangeName || meta.exchangeName || null,
+    marketState: marketStateOf(meta.marketState),
+    source: SOURCE,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export async function fetchRawInstrumentChart(yahooSymbol: string, range: StockChartRange): Promise<StockChartPoint[]> {
+  const params = CHART_RANGE_PARAMS[range];
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${params.range}&interval=${params.interval}`;
+  const data = await fetchJson(url, 90);
+  const result = data?.chart?.result?.[0];
+  if (!result) return [];
+
+  const returnedSymbol = String(result?.meta?.symbol || "").toUpperCase();
+  if (returnedSymbol && returnedSymbol !== yahooSymbol.toUpperCase()) return [];
+
+  const timestamps: number[] = result.timestamp || [];
+  const closes: (number | null)[] = result.indicators?.quote?.[0]?.close || [];
+  const points: StockChartPoint[] = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const price = closes[i];
+    if (typeof price === "number" && Number.isFinite(price)) {
+      points.push({ t: timestamps[i] * 1000, price });
+    }
+  }
+  return points;
+}
