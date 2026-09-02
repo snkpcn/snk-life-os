@@ -1,8 +1,70 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (Phase 4 — Stock Markets — mobile detail sheet + reliable quote
-provider rearchitected and verified with REAL Yahoo Finance data from the actual deployed
-Preview, not mocks; Production still on Phase 2).
+Last verified: 2026-09-02 (Phase 3 Crypto + Phase 4 Stock Markets LAUNCHED to Production —
+see checkpoint below).
+
+## 🚀 PHASE 3+4 — PRODUCTION LIVE (2026-09-02)
+
+- **Live URL**: https://snk-life-os-final-stable2.vercel.app (canonical domain, aliased to this deploy)
+- **Production deployment**: `dpl_6g6TdgwyfTKZjX3XQLBQtBNDGia4`, target=`production`, state=`READY`
+- **Final commit**: `640aeb81d7fe7df7259a77460e39de82dd08b916` on `main` — a merge commit (`--no-ff`)
+  of `claude/snk-life-os-crypto-markets` (tip `941878e`) into `main`, this project's Vercel
+  Production Branch. Merge was clean, zero conflicts (verified: `git merge --no-ff` produced no
+  conflict markers, `npx tsc --noEmit` and `npm run build` both re-run clean on the merged tree
+  before pushing).
+- **What shipped**: Crypto Intelligence (BTC/ETH dashboard, transparent signals, coin detail,
+  Watch/Holding/Alert/Note, Ask Stark, News integration) and the rebuilt Stock Markets experience
+  (SET50/S&P500 tables on real Yahoo Finance data with chunked-batch + chart-meta-fallback
+  reliability, mobile detail sheet on row tap, TH/US market switch with per-market selection
+  memory, Market/Related News, Watch/Holding/Alert/Note, Ask Stark stock context). Full detail in
+  the Phase 3 and Phase 4 sections below.
+- **Automated verification performed** (`web_fetch_vercel_url`, `get_runtime_errors`,
+  `get_project_deployment_protection`): `/` and `/markets` on the canonical URL both → 200,
+  correctly redirect unauthenticated requests to `/login` (`x-matched-path: /login`), Thai
+  default confirmed server-rendered. Zero runtime errors in the 15 minutes after going live. No
+  Vercel SSO/password/trusted-IP wall. Build passed clean both locally and on Vercel.
+- **Real Yahoo Finance data**: NOT re-verified against this exact Production deployment via the
+  debug-endpoint method (deliberately — the user's promotion instructions said "do not make
+  additional feature changes during this deployment," and re-adding the temporary debug
+  route + middleware allowlist line a second time, this time against Production, would be
+  exactly that kind of change). The code shipped here is byte-identical to what was verified on
+  the Preview branch immediately before promotion (`git merge --no-ff` with zero conflicts means
+  no line changed) — see the Phase 4 Fix #2 section below for the actual real numbers returned
+  (ADVANC 349 THB, AOT 61.75 THB, CPALL 45.5 THB, KBANK 248 THB, PTT 41 THB, AAPL 325.13 USD,
+  MSFT 501.02 USD, NVDA 217.44 USD, GOOGL 335.02 USD, AMZN 254.92 USD), all fetched live from
+  Vercel's serverless infrastructure on the identical `lib/stocks/yahoo.ts` code now running in
+  Production.
+- **Not verifiable from this sandbox** (same standing network-policy limitation documented
+  throughout this project): actual login, every module's real interactive behavior (Today,
+  Tasks, Schedule + recurring, Money, Wishlist/Savings, Portfolio, Markets TH/US stock
+  selection+prices as rendered in the UI, Crypto, News content, TH/EN switching, Stark chat,
+  Search, Quick Add, Settings, Backup), and mobile-width rendering — all require a real
+  authenticated browser session, which this environment cannot open. These need the user's
+  on-device confirmation.
+
+### ⚠️ Known issue found during this promotion: Gold / USD-THB no longer accessible
+
+The original Markets Overview tab had a preset-chip TradingView chart covering ADVANC/CPALL/AOT/
+KBANK/PTT/NVDA/**GOLD (XAUUSD)/USD-THB**. When Phase 4 rebuilt Overview into the new
+`StockMarketDashboard` (Thailand/US stock tables only), the Gold and USD/THB presets were dropped
+along with the rest of the old TradingView preset UI — this was **not called out at the time** as
+an intentional scope decision, it's a genuine regression surfaced only now while writing this
+promotion checkpoint. The Markets page subtitle text (`marketsPage.subtitle`, both `en.ts`/`th.ts`)
+still literally says "Thai stocks · US stocks · **Gold · USD/THB**", which is now inaccurate —
+neither is reachable anywhere in the app. Not fixed in this promotion per the explicit "no
+additional feature changes during this deployment" instruction. **Follow-up needed**: either
+restore a Gold/FX view (own real-data section, not the old TradingView iframe given its
+reliability history) or update the subtitle copy to stop promising it.
+
+### Known: Stark's ANTHROPIC_API_KEY status still unconfirmed
+
+Unchanged since Phase 2 — this sandbox has no tool to read or set Vercel environment variables.
+If it's not set, Stark (and the AI-generated News brief/relevance) fall back to their honest
+"not connected" states rather than erroring — never fabricated output — but real AI answers won't
+work until the user sets it in the Vercel dashboard (Project Settings → Environment Variables).
+Crypto, Stocks, Markets, and News do not need any API key (all public, keyless data sources).
+
+## 🐛 PHASE 4 FIX #2 — mobile selection UX + real quote data (2026-09-02, commit `c7619d7`)
 
 ## 🐛 PHASE 4 FIX #2 — mobile selection UX + real quote data (2026-09-02, commit `c7619d7`)
 
