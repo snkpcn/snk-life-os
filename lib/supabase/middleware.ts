@@ -32,7 +32,7 @@ export async function updateSession(request: NextRequest) {
   const isPublicAsset =
     path.startsWith("/_next") ||
     path.startsWith("/api/health") ||
-    path.startsWith("/api/system/ai-provider-check");
+    path.startsWith("/api/system/stark-provider-check");
 
   if (!user && !isAuthRoute && !isPublicAsset) {
     const url = request.nextUrl.clone();
