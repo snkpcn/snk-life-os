@@ -1,6 +1,62 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-01 (audit performed live against GitHub, Vercel, and Supabase APIs).
+Last verified: 2026-09-02 (production promotion + verification performed live against Vercel APIs).
+
+## ✅ STABLE PRODUCTION CHECKPOINT (2026-09-02)
+
+**Production is now live and verified on the canonical project.** This is the baseline to return to
+if anything in a future feature branch goes wrong.
+
+- **Stable commit**: `35d0c4a87d7ec73ce5e1b9541e9f98b75d20df64` ("Update PROJECT_STATE.md: auth
+  hardening verified on new Preview deploy") on branch `claude/snk-life-os-audit-u77d7n`. Confirmed
+  local `HEAD` matches `origin/claude/snk-life-os-audit-u77d7n` exactly (fetched and compared) — working
+  tree clean, nothing uncommitted, nothing unpushed.
+- **Production deployment**: `dpl_64zqH1x75pWLFRsNND2CpWH7sEfS`, target=`production`, state=`READY`,
+  Vercel project `snk-life-os-final-stable2` (`prj_av6ga8I6fFyWzztnO9sUSd2m8Rp7`) — same canonical
+  project used throughout, no new project created. Live at:
+  **https://snk-life-os-final-stable2.vercel.app**
+- **Post-promotion verification performed** (via `mcp__Vercel__get_deployment` and
+  `mcp__Vercel__web_fetch_vercel_url`, plus `get_runtime_errors`/`get_project_deployment_protection`):
+  1. Deployment state = `READY`, aliased correctly to `snk-life-os-final-stable2.vercel.app`.
+  2. `GET /` and `GET /tasks` (no auth cookie) → both correctly redirect server-side to `/login`
+     (`x-matched-path: /login`) — protected-route enforcement confirmed live on Production.
+  3. `GET /login` → clean 200, correct HTML/branding (`<title>SNK LIFE OS</title>`).
+  4. Fetched the compiled `/login` JS chunk directly from Production and confirmed it is byte-identical
+     in logic to the verified Preview build: only `signInWithPassword` is present, the magic-link mode
+     toggle compiles to a `!1` (false) literal (fully tree-shaken, flag is off), and there is no
+     `signUp`/"Create account" code path anywhere in the bundle.
+  5. `get_project_deployment_protection` → `passwordProtection`, `ssoProtection`, and `trustedIps` all
+     `enabled: false` project-wide — no Vercel auth wall in front of Production.
+  6. `get_runtime_errors` (last 1h) → **no runtime errors** on this deployment.
+  - **Not verifiable from this sandbox** (same network-policy wall documented below): an actual
+    authenticated create/save/refresh persistence test and a logout→login session-persistence test,
+    since this environment cannot complete a real Supabase-authenticated round trip. These were already
+    functionally verified in the Preview QA round the user performed on their own device before
+    requesting this promotion (real `last_sign_in_at` recorded in `auth.users`), and the exact same
+    code/config is now what's running in Production — nothing auth-related changed between the verified
+    Preview and this Production deploy.
+- **Supabase state unchanged**: still `snk-life-os-private` (`pbbihfipfbpiqbiqlagd`), same schema, same
+  RLS, same triggers — nothing was migrated or altered as part of this promotion.
+- **Completed features** (all live in Production now): real Supabase Auth (hardened: no public signup,
+  magic link hidden behind a flag), Today/Now/Timeline, Schedule, Tasks/Top3/Attention, Business OS,
+  Projects, Goals, Money (Accounts/Transactions/Budgets/Assets/Debts/Recurring/Categories), Wishlist +
+  Savings Goals with real ledger-based accounting and a real linked-transaction purchase flow, Portfolio,
+  Markets (TradingView + price alerts), Notes, Decisions, Reviews, real server-side Stark AI (Claude API,
+  graceful no-key fallback), Search/Cmd+K, Settings, Backup/Export/Restore + legacy localStorage import.
+  See "What is fully implemented and working" below for full detail — nothing in that list changed.
+- **Remaining/future work** (not yet started, intentionally deferred until after this checkpoint):
+  1. Visual polish pass + round-2 audit (task 15 below) — mobile keyboard-covers-input, TradingView
+     iframe touch-scroll conflicts, overlay z-index edge cases, full breakpoint sweep on authenticated
+     pages (390×844, 393×852, 430×932 not yet checked beyond `/login`).
+  2. **Next feature phase (to be built on a NEW branch off this exact commit, never directly on
+     Production)**: full Thai + English i18n, a Daily World News Brief, a Daily Thailand News Brief, and
+     Thai Rath as a Thailand news source where a permitted/reliable source is available. Not started yet.
+  3. User action still outstanding (see "Still needs your action" below): turn off "Allow new users to
+     sign up" in the Supabase dashboard; set `ANTHROPIC_API_KEY` as a Vercel env var for Stark to work
+     for real.
+- **New working branch**: to be created from this exact commit (`35d0c4a`) for the i18n/News feature
+  phase — see the bottom of this file for its name once created. Production must not be modified
+  directly while that phase is in progress; all of that work happens on the new branch only.
 
 ## Canonical infrastructure
 
@@ -109,10 +165,10 @@ use the `oqirk4nxz` URL above, it has the auth hardening.)
      iPhone) to a Vercel login wall. **Disabled** via `update_project_deployment_protection`
      (`ssoProtection: {enabled: false}`) — this is a project-wide setting, confirmed still in effect on
      the newest deployment too.
-- **Production has NOT been touched.** The old broken production deployment (2-file, 404 on app.js) is
-  still live at `snk-life-os-final-stable2.vercel.app`. Do not promote until the user confirms Preview
-  QA passes on their iPhone (explicit instruction from the user — production promotion is blocked on
-  their sign-off).
+- **Production has now been promoted** (2026-09-02) after the user confirmed Preview QA passed. See the
+  "STABLE PRODUCTION CHECKPOINT" section at the top of this file for full details. The old broken
+  2-file/404-app.js production deployment has been replaced — `snk-life-os-final-stable2.vercel.app`
+  now serves this real Next.js app.
 - To redeploy (e.g. after further fixes), use `deploy_to_vercel` with target=`preview`,
   name=`snk-life-os-final-stable2`, teamId=`team_Xa2lB3AEknYc1qIFPeQ2IHtF`,
   `projectSettings: {framework: "nextjs"}`, and the current contents of every file in the repo (the
@@ -251,23 +307,21 @@ denial` on CONNECT to both hosts). This means:
 
 ### Exact next actions (in order)
 
-1. **Wait for user's iPhone QA on the Preview URL** (blocking, per explicit user instruction). Give
-   them the click-through checklist (create → refresh → verify → edit → refresh → verify → logout/
-   login → verify → archive/delete → refresh → verify, for every entity) across 375×812, 390×844,
-   393×852, 430×932, and 1440×900 desktop.
-2. Fix whatever the user finds broken (dead buttons, layout issues, keyboard-covers-input, etc.).
-3. Do the round-2 audit (task 15) after fixes: mobile safe-area, keyboard avoidance, TradingView iframe
-   touch-scroll conflicts, overlay z-index, full breakpoint sweep on authenticated pages (not just
-   `/login`).
-4. Only after the user explicitly confirms QA passed: promote this exact Preview build to Production
-   on the same project (`deploy_to_vercel` with `target: "production"`, same files, same
-   `projectSettings.framework: "nextjs"`), then re-verify Production the same way Preview was verified
-   above (fetch `/login`, fetch a JS chunk, confirm 200 + no SSO redirect — deployment protection is
-   now disabled project-wide so this should carry over automatically, but re-check).
-5. Remind the user to set `ANTHROPIC_API_KEY` in Vercel project settings for Stark to work for real
+1. **DONE (2026-09-02)**: Preview QA passed, Production promoted, Production verified. See the "STABLE
+   PRODUCTION CHECKPOINT" section at the top of this file.
+2. Create a new working branch off commit `35d0c4a` (the stable checkpoint) for the next feature phase:
+   full Thai + English i18n, Daily World News Brief, Daily Thailand News Brief, Thai Rath as a Thailand
+   source where reliable. **Do not modify Production directly during this phase** — all work happens on
+   that branch until it is independently QA'd and explicitly approved for its own promotion.
+3. Visual polish pass + round-2 audit (task 15, still pending, independent of the i18n/News phase):
+   mobile keyboard-covers-input, TradingView iframe touch-scroll conflicts, overlay z-index, full
+   breakpoint sweep on authenticated pages (390×844, 393×852, 430×932 not yet checked beyond `/login`).
+4. Remind the user to set `ANTHROPIC_API_KEY` in Vercel project settings for Stark to work for real
    (direct link: Vercel dashboard → `snk-life-os-final-stable2` project → Settings → Environment
-   Variables).
-6. Optional cleanup (not blocking): the other 28 stale Vercel projects from the prior chaotic history
+   Variables), and to turn off "Allow new users to sign up" at
+   `https://supabase.com/dashboard/project/pbbihfipfbpiqbiqlagd/auth/providers` (Authentication →
+   Providers → Email) — neither is achievable via any tool available to Claude in this environment.
+5. Optional cleanup (not blocking): the other 28 stale Vercel projects from the prior chaotic history
    (`snk-life-os-v4` through `snk-schema-probe` etc.) are untouched and harmless but could be deleted
    by the user later to declutter their Vercel dashboard — Claude did not touch or delete any of them.
 
