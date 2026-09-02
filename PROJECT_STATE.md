@@ -2,6 +2,91 @@
 
 Last verified: 2026-09-02 (production promotion + verification performed live against Vercel APIs).
 
+## 🟡 PHASE 2 CHECKPOINT — code complete and pushed, Preview deployment NOT yet done (2026-09-02)
+
+**Branch**: `claude/snk-life-os-i18n-news`
+**Commit**: `b97faf8567546d59725890f9b3d996bbdcbe51b8` — pushed to
+`origin/claude/snk-life-os-i18n-news` and confirmed matching (`git fetch` + compared, working tree
+clean, nothing uncommitted). Diff vs the stable checkpoint (`94f6a69`): 49 files changed,
++2991/-408 lines.
+**Local build**: verified passing (`npm run build`, exit 0, all 28 routes compiled, including the new
+`/news` page and `/api/news/*` routes) immediately before this checkpoint was written.
+
+### What is complete (code-complete, build-verified, NOT yet deployed to Preview)
+
+- **Full Thai/English i18n**: `lib/i18n/{en,th,index,context}.tsx` — a dictionary-based architecture
+  (not hardcoded strings scattered through JSX), covering every page, the generic resource engine
+  (`lib/resources.ts` labels/fields/options translated via `translateResourceLabel`/`translateFieldLabel`/
+  `translateOption`), a `LanguageSwitcher` in Settings/header/mobile menu, instant switching (no reload),
+  persisted to `profiles.locale` when authenticated with localStorage+cookie fallback pre-auth, default
+  Thai. Fixed a real latent bug: `lib/date-range.ts` previously computed "today" in the server's UTC
+  clock instead of Asia/Bangkok wall-clock time — now Bangkok-safe. `lib/format.ts` is locale- and
+  timezone-aware (`Asia/Bangkok` explicit, `th-TH`/`en-US` Intl formatting).
+- **Executive News Intelligence module**: `lib/news/*` — server-side RSS aggregation (World: BBC + Al
+  Jazeera; Thailand: Thai Rath preferred + Bangkok Post/The Nation fallback; Business/Markets/Tech) with
+  per-provider failure isolation (`Promise.allSettled`, never blocks other sources or the rest of the
+  app), near-duplicate grouping, and a keyword-based importance heuristic (critical/important/worth
+  knowing, kept sparse). New `/news` page (Brief/World/Thailand/Business/Markets/Tech/Saved tabs), a
+  "Today in 60 Seconds" AI brief (`/api/news/brief`, Claude-generated with a mechanical non-AI fallback
+  when `ANTHROPIC_API_KEY` is unset — never fabricates), a "why this matters to me" AI interpretation
+  clearly labeled as inference (`/api/news/relevance`), Ask-Stark-about-this-story grounded in the
+  article + live SNK data snapshot, and News → Task/Decision/Note actions via the existing
+  `ResourceForm` (new `prefill` prop). Daily News Brief preview added to the Today page. Saved articles
+  persisted to a new `saved_news` table (owner-scoped RLS). Migration `07_i18n_and_news` (already applied
+  live to `snk-life-os-private`) adds `profiles.locale`, `news_preferences`, `saved_news`.
+- **Known caveat, honestly documented in code**: this sandbox cannot make outbound requests to arbitrary
+  news sites (confirmed via `WebFetch`, blocked at the network-egress-proxy level, same class of
+  restriction as the Supabase/Vercel block documented earlier in this file) — so the RSS feed URLs in
+  `lib/news/sources.ts` (Thai Rath especially) were NOT spot-checked live in this session. The fetch
+  layer (`lib/news/rss.ts`) validates every response is genuine well-formed RSS/Atom before trusting it
+  and silently excludes anything that isn't (timeout, 404, wrong content-type) — a wrong URL degrades
+  gracefully to "that provider contributed nothing" rather than breaking the page or fabricating
+  articles, but this still needs a real check once deployed (see next actions).
+
+### What remains — THE DEPLOYMENT PROBLEM (this is the actual blocker right now)
+
+**Preview deployment has not succeeded.** Four direct attempts and two subagent attempts this session
+all failed:
+- Four direct `mcp__Vercel__deploy_to_vercel` calls from the main session each truncated the ~76-file
+  payload partway through (the tool has no incremental/diff mode — it replaces the entire remote file
+  tree on every call, so a partial file list reliably fails the Next.js build with `module_not_found`).
+  Resulting error deployments (harmless, no cleanup needed): `dpl_7kZ6Qrb4oYL8veAfptiBQ916rLS6`,
+  `dpl_DdKiKoqVupCqqq2iiqsY2ttPSDc9`, `dpl_932dV6Y5rJ2AwH2Asno5CvzKX7eC`, `dpl_3MvGtnquGzJzzZh1bNXTsBniueQU`.
+- A subagent delegated the same task once and hit a hard account-level rate limit (HTTP 429, "session
+  limit... resets 6:30am UTC") before it could finish assembling the payload.
+- A second subagent retry was stopped by explicit user instruction before it could attempt the call, to
+  stop burning usage on this in the current session.
+- **Root cause is payload size, not a code problem.** The local build is verified green at this exact
+  commit. `create_git_project` (linking this Vercel project to GitHub so it deploys from a push) was
+  considered and deliberately NOT used — it risks changing which branch this canonical project treats as
+  "Production" without a safe way to verify that from here, which conflicts with "do not touch Production
+  during this phase."
+- Production is untouched and remains exactly at the stable checkpoint above
+  (`dpl_64zqH1x75pWLFRsNND2CpWH7sEfS`, commit `94f6a69`, live at
+  `https://snk-life-os-final-stable2.vercel.app`).
+
+### Exact next step (start here next session)
+
+1. Retry `mcp__Vercel__deploy_to_vercel` (target=`preview`, name=`snk-life-os-final-stable2`,
+   teamId=`team_Xa2lB3AEknYc1qIFPeQ2IHtF`, projectSettings.framework=`nextjs`) with the **complete**
+   ~76-file tree from commit `b97faf8` (`git ls-files` on that commit minus `.gitignore`,
+   `.env.example`, `index.html`, `package-lock.json`, `next-env.d.ts`). Whatever approach is used
+   (direct call, or a subagent with fresh budget), it must produce ONE call containing every file —
+   there is no incremental mode, a partial list fails the build every time. Consider: a fresh session
+   has a full usage budget, which may simply avoid the truncation problem outright.
+2. Once READY, verify like the Production promotion was verified: fetch `/login` and `/tasks` (protected
+   redirect), a JS chunk (no signup, hardening intact), TH default language, EN switch, a real
+   create/save/refresh on something simple, and open `/news` to confirm the RSS providers actually
+   return real articles (this is the one thing that could not be verified at all this session — first
+   real look at whether the Thai Rath / Bangkok Post / BBC feed URLs actually work).
+3. Full bilingual + News QA per the original Phase 2 spec (language switch + refresh + logout/login
+   persistence, every News action, mobile breakpoints) before considering Preview QA passed.
+4. Only after explicit Preview QA sign-off: promote to Production on the same project, exactly as the
+   Phase 1 checkpoint was promoted, then re-verify Production.
+5. `ANTHROPIC_API_KEY` still needs to be set as a Vercel env var (unchanged ask from before) — without
+   it, the News brief and "why this matters to me" fall back to their honest non-AI/not-connected states
+   rather than crashing, but won't be using AI until it's set.
+
 ## ✅ STABLE PRODUCTION CHECKPOINT (2026-09-02)
 
 **Production is now live and verified on the canonical project.** This is the baseline to return to
