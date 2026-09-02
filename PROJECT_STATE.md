@@ -10,9 +10,9 @@ further down this file, untouched).
 has NOT been touched by this hotfix.**
 
 - **Branch**: `claude/snk-life-os-hotfix-gold-stark`, created from Production commit `f6dfb309`
-- **Final commit on this branch**: `471779b81c071cf270fa970e7514b8b4ac7e57cf`
+- **Final commit on this branch**: `385cd55421748154725f49b20fd9fb2ccb5bef6c`
 - **Preview URL** (git-linked, auto-deployed): https://snk-life-os-final-stable2-git-claude-snk-ca5960-7hchbrnqkg-4613.vercel.app
-- **Latest Preview deployment**: `dpl_7u9QUwexyM3C7nn7Mze9RKC3C9ze`, state `READY`, zero runtime errors in the last hour
+- **Latest Preview deployment**: `dpl_BpFsrVacvo3ydZNNRKapUDHXHJaE`, state `READY`, zero runtime errors in the last hour
 
 ### Issue 1 — Gold + USD/THB restored (real regression fix, not just a subtitle fix)
 
@@ -64,30 +64,52 @@ route before it was removed):
   Stark to (a) never invent numbers, (b) note the COMEX-futures-vs-spot distinction when
   relevant, (c) never call the Thai-baht conversion the official Gold Traders Association price.
 
-### Issue 2 — Stark Anthropic configuration: NEEDS USER ACTION
+### Issue 2 — Stark is no longer hard-dependent on Anthropic (multi-provider abstraction)
 
-Confirmed via a temporary unauthenticated runtime-check route (`app/api/system/stark-check`,
-now fully removed) that made a real minimal Anthropic API test call from the live Preview
-deployment:
+The user does not want to add separate Anthropic billing right now. Rather than requiring
+`ANTHROPIC_API_KEY` specifically, Stark now runs on a small provider abstraction
+(`lib/ai/{types,anthropic,openai,google,openrouter,index}.ts`) that works with whichever of
+four supported AI providers has its one required env var set, or degrades gracefully if none do:
 
-**`ANTHROPIC_API_KEY` is NOT set on the Preview environment** (`{"keyPresent":false,"testCallSucceeded":false}`).
-The existing `/api/stark` route already degrades gracefully when this is missing — it returns
-a clear "Stark isn't connected yet" message (TH/EN) instead of crashing or breaking the rest of
-the app — so this is a configuration gap, not a code bug, and nothing else in the app is affected.
+| Provider | Env var | Notes |
+|---|---|---|
+| Anthropic (Claude) | `ANTHROPIC_API_KEY` | via the existing `@anthropic-ai/sdk` dependency, unchanged model tier (`claude-sonnet-5`) |
+| OpenAI | `OPENAI_API_KEY` | raw HTTP to `chat/completions`, no new dependency |
+| Google (Gemini) | `GEMINI_API_KEY` | raw HTTP to `generateContent`, no new dependency |
+| OpenRouter | `OPENROUTER_API_KEY` | raw HTTP, OpenAI-compatible shape, no new dependency |
 
-**Verified safe** before and during this check (per the explicit instruction never to print or
-request the secret): grepped all source for `ANTHROPIC_API_KEY` references (server-only files
-only, `app/api/stark/route.ts` and the now-removed `stark-check` route); confirmed it never
-appears in any client bundle chunk; confirmed `.env`/`.env.example` (tracked in git, by design —
-`.env` only holds genuinely public `NEXT_PUBLIC_*` values protected by Supabase RLS, not secrecy)
-contain no real key value; searched full git history for any literal `ANTHROPIC_API_KEY=sk-...`
-pattern and found none. The debug route itself only ever returned booleans and a whitelisted
-failure-category enum derived from `err.status` — never the key or raw error text.
+`getConfiguredProvider()` picks the first configured one in that priority order (Anthropic
+first only so anyone who later sets `ANTHROPIC_API_KEY` gets identical behavior to before this
+change) — no provider is required, and the app never assumes Anthropic specifically. Adding a
+fifth provider later is one new file implementing the `AiProvider` interface plus one line in
+the registry.
 
-**Action needed from the user** (one action, then tell Claude to continue):
-Open https://vercel.com/7hchbrnqkg-4613/snk-life-os-final-stable2/settings/environment-variables
-and add `ANTHROPIC_API_KEY` with your real Anthropic API key, for both the **Preview** and
-**Production** environments. Once confirmed, Stark verification will be re-run automatically.
+**Verified live on the deployed Preview** via a temporary unauthenticated probe route (now
+fully removed, same reversible pattern used throughout this hotfix): none of the four
+providers' env vars are set — confirmed both by an earlier broad presence-only scan of 18
+common AI-provider env var names (all `false`) and by `getConfiguredProvider()` itself
+returning `null` when exercised for real on the live deployment. `/api/stark`'s "not
+connected" message now dynamically lists all four options with their exact env var (TH/EN)
+instead of naming only Anthropic, so a missing key is actionable rather than a dead end. A
+configured-but-failing provider (bad key, rate limit, network error) now returns a clear
+graceful message instead of throwing a 500 — this is new behavior; previously an Anthropic
+outage would have crashed the request.
+
+**No provider is currently configured — Stark cannot produce a real AI reply until the user
+sets one.** Per the "do not ask for secrets in chat" instruction, no key was requested here.
+**Action needed from the user** (any ONE of these four, not all): open
+https://vercel.com/7hchbrnqkg-4613/snk-life-os-final-stable2/settings/environment-variables
+and add exactly one of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or
+`OPENROUTER_API_KEY` (Preview and/or Production) with a real key from that provider. Stark
+will pick it up automatically on the next deployment/request — no code change needed.
+
+**Verified safe**: no provider key is ever sent to the client — every call happens server-side
+inside `app/api/stark/route.ts`; confirmed no provider env var name or key pattern (`sk-ant`,
+`sk-proj`, `sk-or-`, etc.) appears in the built client bundle (`.next/static/chunks/*.js`);
+the temporary probe route only ever returned booleans, provider IDs, and short non-secret
+reply/error previews — never a key value. `news/brief` and `news/relevance` still read
+`ANTHROPIC_API_KEY` directly and already degrade gracefully when it's absent (a separate,
+pre-existing, already-working feature — left untouched per "don't change unrelated features").
 
 ### Issue 3 — Authenticated Preview/Production smoke test: NEEDS USER DEVICE
 
@@ -110,16 +132,17 @@ Gold/FX data, Stark config presence, build/typecheck, zero runtime errors) alrea
    Schedule, and Money still work exactly as before (regression check — nothing in this hotfix
    touched their code, but worth confirming on-device).
 6. Switch TH/EN and confirm Gold/FX labels and the indicative disclaimer translate correctly.
-7. If you've added `ANTHROPIC_API_KEY`, ask Stark a question on the Gold tab and confirm it
-   answers using the real price shown, without inventing numbers.
+7. If you've added one of the four provider env vars (see Issue 2), ask Stark a question on
+   the Gold tab and confirm it answers using the real price shown, without inventing numbers.
 
 ### Build/typecheck status
 
 `npx tsc --noEmit`: clean (exit 0). `npm run build`: clean, all routes compile including the
-new `/api/markets/gold`, `/api/markets/fx` routes. Both temporary debug routes
-(`app/api/system/stark-check`, `app/api/system/gold-fx-check`) and their middleware allowlist
-entries are fully removed — `lib/supabase/middleware.ts` confirmed byte-identical to the
-pre-hotfix Production baseline via `git diff f6dfb309 -- lib/supabase/middleware.ts` (empty output).
+`/api/markets/gold`, `/api/markets/fx` routes and the new `lib/ai/*` provider abstraction. All
+four temporary debug routes used across this hotfix (`stark-check`, `gold-fx-check`,
+`ai-provider-check`, `stark-provider-check`) and every middleware allowlist entry they needed
+are fully removed — `lib/supabase/middleware.ts` confirmed byte-identical to the pre-hotfix
+Production baseline via `git diff f6dfb309 -- lib/supabase/middleware.ts` (empty output).
 
 **Production touched: NO.** This entire hotfix exists only on the `claude/snk-life-os-hotfix-gold-stark`
 branch and its Preview deployment. Waiting for explicit user approval before any Production promotion.
