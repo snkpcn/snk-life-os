@@ -1,6 +1,40 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (Phase 2 production promotion in progress — see checkpoint below).
+Last verified: 2026-09-02 (Phase 2 LAUNCHED to Production — see checkpoint below).
+
+## 🚀 PHASE 2 — PRODUCTION LIVE (2026-09-02)
+
+- **Live URL**: https://snk-life-os-final-stable2.vercel.app (canonical domain, aliased to this deploy)
+- **Production deployment**: `dpl_ATkynvFFt4YNSjvwnt16Bs3f4bXg`, target=`production`, state=`READY`
+- **Final commit**: `1c2925fb237dc6ad0b5af1a53060ce8eaad78fd3` on `main` (merge of the verified Phase 2
+  checkpoint `1d83670` from `claude/snk-life-os-i18n-news`, which itself is `7e98923` — the mobile
+  Start/End fix — plus the checkpoint doc commit). `main` is this project's Vercel Production Branch, so
+  this push built and deployed automatically via the git integration set up earlier this session.
+- **Automated verification performed** (`mcp__Vercel__web_fetch_vercel_url`, `get_project_deployment_protection`,
+  `get_runtime_errors`): `/login` → 200, serves the real app with `lang="th"` (Thai default confirmed
+  server-rendered), language switcher present (TH active/EN available), password-only form, no signup
+  path. `/schedule` and `/news` (Phase 2's new pages) → both correctly redirect unauthenticated requests
+  to `/login?next=...`, confirming protected-route middleware covers them. No Vercel SSO/password/
+  trusted-IP wall (`get_project_deployment_protection` all `enabled: false`). Zero runtime errors in the
+  15 minutes after going live. No missing script/CSS references in the served HTML.
+- **Not verifiable from this sandbox** (same standing network-policy limitation documented throughout
+  this project): actual login, create/edit/delete on any entity, refresh persistence, logout/login
+  persistence, News articles actually loading real content from the RSS providers, and the Start/End
+  mobile layout fix rendering correctly — all require a real authenticated browser session, which this
+  environment cannot open. These need the user's on-device confirmation; nothing here should be read as
+  "confirmed working" for anything past what's listed as automated-verified above.
+- **Supabase**: unchanged this promotion — `snk-life-os-private` (`pbbihfipfbpiqbiqlagd`), migrations
+  through `08_recurring_schedule` already applied live in earlier steps this session (`profiles.locale`,
+  `news_preferences`, `saved_news`, `schedule_events.rrule`, `schedule_event_occurrences`), all RLS
+  `owner_id = auth.uid()`. `ANTHROPIC_API_KEY` still not confirmed set as a Vercel env var — Stark and the
+  AI-generated News brief/relevance fall back to their honest non-AI/not-connected states without it.
+- **Known scope trade-offs carried into Production** (disclosed earlier, unchanged): the Schedule page
+  dropped `business_id`/`project_id` linking; Timeline still reads raw `schedule_events` (a recurring
+  event shows there only on its literal first occurrence, not every occurrence).
+- **Deploy method going forward**: this project is now git-linked (`snkpcn/snk-life-os`, Production
+  Branch = `main`). Pushing to `main` deploys Production; pushing to any other branch deploys Preview.
+  No more manual `deploy_to_vercel` file-tree assembly needed — that was the whole fix for this session's
+  earlier deployment blocker.
 
 ## ✅ PHASE 2 — STABLE PRODUCTION CHECKPOINT (2026-09-02)
 
