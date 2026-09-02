@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchRawInstrumentQuote, fetchRawInstrumentChart } from "@/lib/stocks/yahoo";
-import { GOLD_YAHOO_SYMBOL, GOLD_DISPLAY_SYMBOL, GOLD_DISPLAY_NAME, USDTHB_YAHOO_SYMBOL, USDTHB_DISPLAY_SYMBOL, USDTHB_DISPLAY_NAME, estimateThaiGoldPerBaht } from "@/lib/gold-fx/constants";
+import { GOLD_YAHOO_SYMBOL, USDTHB_YAHOO_SYMBOL, USDTHB_DISPLAY_SYMBOL, USDTHB_DISPLAY_NAME } from "@/lib/gold-fx/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -15,26 +15,25 @@ async function rawProbe(yahooSymbol: string) {
   }
 }
 
+const GOLD_SYMBOL_CANDIDATES = ["GC=F", "XAUUSD=X", "XAU=X", "MGC=F"];
+
 // TEMPORARY, UNAUTHENTICATED — used once to confirm real Gold/USD-THB data reaches this
 // deployment (same data-fetch functions the real /api/markets/gold and /api/markets/fx
 // routes use, which stay auth-gated). Removed before this branch ships.
 export async function GET() {
-  const [gold, chart, usdThb, goldProbe, usdThbProbe] = await Promise.all([
-    fetchRawInstrumentQuote(GOLD_YAHOO_SYMBOL, GOLD_DISPLAY_SYMBOL, GOLD_DISPLAY_NAME, "USD"),
+  const [chart, usdThb, usdThbProbe, ...goldCandidateProbes] = await Promise.all([
     fetchRawInstrumentChart(GOLD_YAHOO_SYMBOL, "1M"),
     fetchRawInstrumentQuote(USDTHB_YAHOO_SYMBOL, USDTHB_DISPLAY_SYMBOL, USDTHB_DISPLAY_NAME, "THB"),
-    rawProbe(GOLD_YAHOO_SYMBOL),
     rawProbe(USDTHB_YAHOO_SYMBOL),
+    ...GOLD_SYMBOL_CANDIDATES.map((sym) => rawProbe(sym)),
   ]);
 
-  const thaiGoldIndicativePerBaht = estimateThaiGoldPerBaht(gold?.price ?? null, usdThb?.price ?? null);
+  const goldCandidates = GOLD_SYMBOL_CANDIDATES.map((sym, i) => ({ symbol: sym, ...goldCandidateProbes[i] }));
 
   return NextResponse.json({
-    gold,
     goldChartPoints: chart.length,
     usdThb,
-    thaiGoldIndicative: thaiGoldIndicativePerBaht !== null ? { pricePerBahtWeightTHB: thaiGoldIndicativePerBaht, isIndicative: true } : null,
-    goldProbe,
     usdThbProbe,
+    goldCandidates,
   });
 }
