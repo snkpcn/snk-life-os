@@ -33,8 +33,7 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/_next") ||
     path.startsWith("/api/health") ||
     path.startsWith("/api/system/stark-check") ||
-    path.startsWith("/api/markets/gold") ||
-    path.startsWith("/api/markets/fx");
+    path.startsWith("/api/system/gold-fx-check");
 
   if (!user && !isAuthRoute && !isPublicAsset) {
     const url = request.nextUrl.clone();
