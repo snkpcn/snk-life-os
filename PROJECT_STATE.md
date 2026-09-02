@@ -1,8 +1,107 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (Post-launch hotfix branch ready in Preview, NOT yet promoted —
-see "HOTFIX" section immediately below. Production is still on the Phase 3+4 checkpoint
-further down this file, untouched).
+Last verified: 2026-09-02 (FINAL RELEASE — promoted to Production. See section immediately
+below. The former "HOTFIX" section further down is now superseded/merged; kept as history.)
+
+## ✅ FINAL RELEASE — v1 (2026-09-02)
+
+**Production is live at the exact commit below. This was the final closeout pass: verify,
+fix real failures, ship, document, stop — no new features, no redesign.**
+
+- **Production URL**: https://snk-life-os-final-stable2.vercel.app
+- **Final Production commit**: `bea471689faff14723cb57ce3b3c3bf264cee7aa` on `main`
+- **Release tag**: `snk-life-os-production-v1`
+- **Production deployment**: `dpl_AJnEmy5ygRuFAssVRmjKT4UHGFkU`, `target=production`, `READY`,
+  aliased to the canonical domain, zero runtime errors
+- **Supabase project**: `snk-life-os-private` (unchanged, not touched this pass)
+- **GitHub**: `snkpcn/snk-life-os`, `main` branch
+
+### What changed in this final pass
+
+1. **Gold + USD/THB** — real regression fix carried over from the prior hotfix round (see the
+   HOTFIX section below for full root-cause detail): both now show real Yahoo Finance data,
+   with the Thai-gold-per-baht conversion clearly labeled "Indicative / Estimated" /
+   "ประมาณการ", never presented as the official Gold Traders Association price.
+2. **Stark AI provider architecture** — no longer hard-dependent on any single provider.
+   `lib/ai/{types,anthropic,openai,google,openrouter,index}.ts` implements a small
+   `AiProvider` interface (id, label, envVar, isConfigured(), chat()). Each provider needs
+   exactly ONE environment variable — **only the variable NAME is documented, never a value**:
+
+   | Provider | Env var name |
+   |---|---|
+   | Anthropic (Claude) | `ANTHROPIC_API_KEY` |
+   | OpenAI | `OPENAI_API_KEY` |
+   | Google (Gemini) | `GEMINI_API_KEY` — **currently configured, this is the active provider** |
+   | OpenRouter | `OPENROUTER_API_KEY` |
+
+   `getConfiguredProvider()` returns the first one with its env var set (Anthropic first in
+   priority order only to preserve identical behavior for anyone who sets that key later); no
+   provider is required, and a missing/failing provider degrades to a clear message (TH/EN)
+   instead of breaking the app. Adding a fifth provider is one new file + one line in the
+   registry — the model choice lives in that one file, never hardcoded elsewhere in the app.
+
+3. **Gemini model** — `gemini-3.1-flash-lite` (the low-cost tier appropriate for a daily
+   chief-of-staff assistant, per explicit instruction not to silently fall back to an
+   expensive reasoning model). A bounded, same-tier fallback chain
+   (`gemini-3.1-flash-lite` → `gemini-2.0-flash-lite` → `gemini-flash-lite-latest`) advances
+   ONLY on a confirmed "model not found / no longer available" 404 from Google — never on a
+   transient 429 (quota)/503 (capacity)/timeout, since retrying a different model can't fix
+   those and would just burn more quota. The optional `GEMINI_MODEL` env var overrides this
+   entirely with a single explicit choice. A 20-second request timeout was added (a live test
+   under real Google-side high demand previously hung well past 60s with no timeout at all).
+4. **Stark context scoping (token/quota efficiency)** — `lib/stark-context.ts` was split from
+   one always-fetch-everything function into `buildTodayContext` (always-on baseline: top-3
+   tasks + today's schedule, genuinely small), `buildTasksContext`, `buildMoneyContext`,
+   `buildProjectsGoalsContext`. `app/api/stark/route.ts` now fetches only the pieces relevant
+   to a clearly-topical question (a money question no longer also pulls tasks/projects/goals
+   context, matching the existing crypto/stock scoping pattern); a fully generic question still
+   gets the broader picture. Conversation history was already capped at the last 10 turns, and
+   there was already exactly one AI call per request — both already satisfied "no huge dumps,
+   no hidden repeated calls" and needed no change.
+
+### Final verification performed this pass (real, live, on the deployed Preview and Production)
+
+All via the same reversible temporary-debug-route pattern used throughout this project (added,
+used once, then fully removed with the middleware allowlist entry reverted and confirmed
+byte-identical to baseline via `git diff` before every push):
+
+- **Gold** (COMEX futures, `GC=F`): real price $4440.60, change -0.84%, source Yahoo Finance — PASS
+- **USD/THB** (`THB=X`): real price 33.13, change +1.06%, source Yahoo Finance — PASS
+- **ADVANC** (SET50): real quote, "Advanced Info Service Public Company Limited", 349 THB,
+  -1.69% — correct symbol, confirmed NOT substituted with an unrelated instrument — PASS
+- **AAPL** (S&P 500): real quote, "Apple Inc.", $324.67, +3.58% — correct symbol, confirmed
+  NOT substituted — PASS
+- **Stark real AI request** (exactly once, per instruction not to hammer the API after a
+  pass): provider correctly selected as `google` (Gemini); a real Thai-language question
+  ("วันนี้ตารางของฉันมีอะไรบ้าง?") against a synthetic-but-labeled test context fixture
+  returned a real Thai reply that correctly referenced both fixture items verbatim ("Team
+  standup 09:00", "Chest Workout 18:00") — confirms provider selection, real API connectivity,
+  correct language output, and context grounding all work end-to-end. Testing stopped
+  immediately after this PASS.
+- **Production smoke test**: `/`, `/markets`, `/stark`, `/settings` on the live
+  `snk-life-os-final-stable2.vercel.app` domain all correctly redirect an unauthenticated
+  request to `/login` (confirms deployed, healthy, and still correctly private — no
+  unrestricted public access), zero runtime errors in the deployment window.
+- **Secret safety**: grepped the built client bundle (`.next/static/chunks/*.js`) for
+  `GEMINI_API_KEY`, `GEMINI_MODEL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `OPENROUTER_API_KEY` — zero matches. No provider key is ever sent to the client; every AI
+  call happens server-side inside `app/api/stark/route.ts`.
+- **Build**: `npx tsc --noEmit` and `npm run build` both clean on the exact commit promoted to
+  Production.
+
+### Known limitation — carried forward, unchanged, disclosed every time it's been relevant
+
+This sandbox's outbound network policy blocks all access to `supabase.co` and `vercel.app` at
+the OS level for a real browser session, so no authenticated end-to-end click-through (login,
+Today, Tasks, Business, Projects, Goals, Money, Wishlist/Savings, Portfolio, Search/Quick Add,
+mobile visual QA at real breakpoints, every-button audit) could be performed from this
+environment this pass. None of that code was touched by this release — only
+`lib/ai/*`, `lib/stark-context.ts`, `app/api/stark/route.ts`, `app/api/news/relevance/route.ts`
+(import fix only), and the Gold/FX files from the prior hotfix round were changed — so those
+features carry forward the same status they had from their last user-confirmed QA pass. A
+final pass on the owner's own authenticated device is still the one thing this environment
+cannot substitute for. Everything achievable from this environment (real market/AI data, build,
+deploy, secret safety, redirect/auth-gating behavior) is verified above with no fabricated PASS.
 
 ## 🟡 HOTFIX — Gold + USD/THB restored, Stark config checked (2026-09-02, Preview only)
 
