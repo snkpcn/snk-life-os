@@ -32,8 +32,23 @@ async function runCheck(locale: "th" | "en") {
   }
 }
 
+// Diagnostic-only, never reveals a value — lists env var NAMES that look Gemini/Google-related
+// (case-insensitive substring match), to catch a name typo/whitespace/casing mismatch without
+// ever touching the actual key. Removed with the rest of this temporary route.
+function matchingEnvVarNames(needle: string): string[] {
+  return Object.keys(process.env).filter((k) => k.toUpperCase().includes(needle.toUpperCase()));
+}
+
 export async function GET() {
   const provider = getConfiguredProvider();
   const [th, en] = await Promise.all([runCheck("th"), runCheck("en")]);
-  return NextResponse.json({ providerId: provider?.id ?? null, th, en });
+  return NextResponse.json({
+    providerId: provider?.id ?? null,
+    th,
+    en,
+    diagnostic: {
+      geminiLikeEnvVarNames: matchingEnvVarNames("GEMINI"),
+      googleLikeEnvVarNames: matchingEnvVarNames("GOOGLE"),
+    },
+  });
 }
