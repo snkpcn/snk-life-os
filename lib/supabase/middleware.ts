@@ -29,7 +29,12 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthRoute = path.startsWith("/login");
-  const isPublicAsset = path.startsWith("/_next") || path.startsWith("/api/health") || path.startsWith("/api/system/stark-check");
+  const isPublicAsset =
+    path.startsWith("/_next") ||
+    path.startsWith("/api/health") ||
+    path.startsWith("/api/system/stark-check") ||
+    path.startsWith("/api/markets/gold") ||
+    path.startsWith("/api/markets/fx");
 
   if (!user && !isAuthRoute && !isPublicAsset) {
     const url = request.nextUrl.clone();
