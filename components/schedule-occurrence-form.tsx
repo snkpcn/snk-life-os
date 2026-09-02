@@ -52,24 +52,24 @@ export function ScheduleOccurrenceForm({ occurrence, onCancel, onSaved }: { occu
           className="h-12 w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
         />
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
+      <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="min-w-0 max-w-full">
           <label className="mb-1 block text-[11px] text-muted">{t("schedulePage.start")}</label>
           <input
             required
             type="datetime-local"
             value={toDateTimeInputValue(startTime)}
             onChange={(e) => setStartTime(e.target.value ? new Date(e.target.value).toISOString() : startTime)}
-            className="h-12 w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
+            className="h-12 w-full min-w-0 max-w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
           />
         </div>
-        <div>
+        <div className="min-w-0 max-w-full">
           <label className="mb-1 block text-[11px] text-muted">{t("schedulePage.end")}</label>
           <input
             type="datetime-local"
             value={toDateTimeInputValue(endTime)}
             onChange={(e) => setEndTime(e.target.value ? new Date(e.target.value).toISOString() : null)}
-            className="h-12 w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
+            className="h-12 w-full min-w-0 max-w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
           />
         </div>
       </div>

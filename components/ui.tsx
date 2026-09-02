@@ -105,7 +105,7 @@ export function Sheet({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`safe-bottom max-h-[92vh] w-full ${wide ? "sm:max-w-2xl" : "sm:max-w-lg"} overflow-y-auto rounded-t-[24px] border border-line bg-panel p-5 sm:rounded-[24px]`}
+        className={`safe-bottom box-border max-h-[92vh] w-full max-w-full ${wide ? "sm:max-w-2xl" : "sm:max-w-lg"} overflow-x-hidden overflow-y-auto rounded-t-[24px] border border-line bg-panel p-5 sm:rounded-[24px]`}
       >
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold">{title}</h3>
