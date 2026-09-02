@@ -2,6 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import { todayRange } from "@/lib/date-range";
 import { fetchMarketsByIds, fetchTopMarkets, fetchGlobal, DEFAULT_COIN_IDS } from "@/lib/crypto/coingecko";
 import { computeBtcPulse, computeCoinsToWatch } from "@/lib/crypto/signals";
+import { fetchQuotes } from "@/lib/stocks/yahoo";
+import { SET50 } from "@/lib/stocks/set50";
+import { SP500 } from "@/lib/stocks/sp500";
+import { computeStockSignals } from "@/lib/stocks/signals";
+import type { StockMarket } from "@/lib/stocks/types";
 
 export async function buildStarkContext(supabase: ReturnType<typeof createClient>) {
   const { startISO, endISO, dateOnly } = todayRange();
@@ -96,6 +101,37 @@ ${calc}
 CRYPTO — INTERPRETATION (BTC Market Pulse — an analytical label derived from the momentum/volume/volatility numbers above, NOT a buy/sell recommendation): ${pulse.state.toUpperCase()} (factors: ${pulse.factors.join(", ") || "none"})
 
 When answering crypto questions, clearly distinguish which of these three categories (known data / calculation / interpretation) your answer draws from, and say "missing data" for anything not covered above rather than inventing a number.`;
+}
+
+/** Live stock-market snapshot for Stark (SET50 or S&P 500, whichever market the user has
+ * selected on the Stocks tab), same known-data/calculation split as crypto — never a
+ * BUY/SELL recommendation, only descriptive signals with their real numbers. */
+export async function buildStockContext(market: StockMarket): Promise<string> {
+  const constituents = market === "TH" ? SET50 : SP500;
+  const quotes = await fetchQuotes(constituents.map((c) => c.symbol), market);
+
+  if (quotes.length === 0) {
+    return `STOCK DATA (${market === "TH" ? "SET50" : "S&P 500"}): currently unavailable from the market data provider — say so plainly if asked, do not invent any stock prices.`;
+  }
+
+  const signals = computeStockSignals(quotes).slice(0, 8);
+  const knownData = quotes
+    .slice(0, 20)
+    .map((q) => `${q.name} (${q.symbol}): ${q.price ?? "unknown"} ${q.currency}, change ${q.changePercent ?? "?"}%, volume ${q.volume ?? "?"}`)
+    .join("\n");
+
+  const calc =
+    signals.length > 0
+      ? signals.map((s) => `${s.quote.symbol}: ${s.reasons.map((r) => `${r.key}=${r.value}`).join(", ")}`).join("\n")
+      : "No stocks currently meet the signal thresholds.";
+
+  return `STOCK MARKET — ${market === "TH" ? "SET50 (Thailand)" : "S&P 500 (United States)"} — KNOWN DATA (source: Yahoo Finance, fetched just now):
+${knownData}
+
+STOCK MARKET — CALCULATION (rule-based descriptive signals derived from the data above — unusual volume, strong or weak momentum, high volatility; NOT a buy/sell recommendation and NEVER phrase these as BUY/SELL/STRONG BUY):
+${calc}
+
+When answering stock questions, clearly say which of these two categories (known data / calculation) your answer draws from, and say "missing data" for anything not covered above rather than inventing a price.`;
 }
 
 export function languageInstruction(locale: string | undefined) {
