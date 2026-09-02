@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { buildStarkContext, buildCryptoContext, buildStockContext, languageInstruction } from "@/lib/stark-context";
+import { buildTodayContext, buildTasksContext, buildMoneyContext, buildProjectsGoalsContext, buildCryptoContext, buildStockContext, languageInstruction } from "@/lib/stark-context";
 import { getConfiguredProvider, SUPPORTED_PROVIDERS, type ChatMessage } from "@/lib/ai";
 import type { StockMarket } from "@/lib/stocks/types";
 
@@ -61,8 +61,22 @@ export async function POST(request: Request) {
     /stock|share|equity|set50|s&p|nasdaq|nyse|หุ้น|ตลาดหลักทรัพย์/i.test(message) ||
     history.some((m) => /stock|share|equity|set50|s&p|nasdaq|nyse|หุ้น|ตลาดหลักทรัพย์/i.test(m.content));
 
-  const [context, cryptoContext, stockContext] = await Promise.all([
-    buildStarkContext(supabase),
+  const wantsTasks = /\btask|todo|to-do|overdue|งาน|ค้าง/i.test(message);
+  const wantsMoney = /money|expense|income|budget|debt|asset|spending|เงิน|รายจ่าย|รายรับ|งบ|หนี้/i.test(message);
+  const wantsProjects = /project|goal|โปรเจกต์|เป้าหมาย/i.test(message);
+
+  // A clearly-topical question (crypto/stocks/tasks/money/projects) sends only that topic's
+  // context plus the always-on Today baseline, instead of the full daily snapshot on every
+  // request — keeps token spend down and matches what was actually asked. A fully generic
+  // question (none of the above matched) falls back to the broader picture, since "how am I
+  // doing" genuinely needs it.
+  const isTopical = wantsCrypto || wantsStocks || wantsTasks || wantsMoney || wantsProjects;
+
+  const [context, tasksContext, moneyContext, projectsGoalsContext, cryptoContext, stockContext] = await Promise.all([
+    buildTodayContext(supabase),
+    wantsTasks || !isTopical ? buildTasksContext(supabase) : Promise.resolve(""),
+    wantsMoney || !isTopical ? buildMoneyContext(supabase) : Promise.resolve(""),
+    wantsProjects || !isTopical ? buildProjectsGoalsContext(supabase) : Promise.resolve(""),
     wantsCrypto ? buildCryptoContext() : Promise.resolve(""),
     wantsStocks ? buildStockContext(stockAsk?.market || "TH") : Promise.resolve(""),
   ]);
@@ -83,7 +97,9 @@ export async function POST(request: Request) {
     ? `\n\nThe user is asking about this specific instrument (a commodity or FX rate, not a stock or crypto) — answer only from these known facts, never invent numbers. If this is gold, its price is a COMEX futures price, not a literal LBMA spot fix — mention that distinction if relevant. If a Thai-baht-equivalent gold value is mentioned anywhere, always call it an indicative/estimated conversion, never the official Gold Traders Association of Thailand price:\n${instrumentAsk.name} (${instrumentAsk.symbol}): price ${instrumentAsk.price ?? "unknown"} ${instrumentAsk.currency}, change ${instrumentAsk.changePercent ?? "?"}%`
     : "";
 
-  const systemPrompt = `You are Stark, the executive chief-of-staff inside SNK LIFE OS. Answer only from the live data snapshot provided below — never invent numbers. If something isn't in the snapshot, say it's not tracked yet and suggest where to add it. Be direct, concise, and action-oriented. Never use labels like BUY/SELL/STRONG BUY for stocks or crypto — describe momentum, volume, and volatility factually instead. ${languageInstruction(locale)}\n\n${context}${cryptoContext ? `\n\n${cryptoContext}` : ""}${stockContext ? `\n\n${stockContext}` : ""}${articleBlock}${cryptoAskBlock}${stockAskBlock}${instrumentAskBlock}`;
+  const snapshotBlock = [context, tasksContext, moneyContext, projectsGoalsContext].filter(Boolean).join("\n");
+
+  const systemPrompt = `You are Stark, the executive chief-of-staff inside SNK LIFE OS. Answer only from the live data snapshot provided below — never invent numbers. If something isn't in the snapshot, say it's not tracked yet and suggest where to add it (this may mean it genuinely isn't tracked, or just that this answer only pulled in the topics relevant to the question — say so rather than guessing). Be direct, concise, and action-oriented. Never use labels like BUY/SELL/STRONG BUY for stocks or crypto — describe momentum, volume, and volatility factually instead. ${languageInstruction(locale)}\n\nLive SNK LIFE OS data snapshot:\n${snapshotBlock}${cryptoContext ? `\n\n${cryptoContext}` : ""}${stockContext ? `\n\n${stockContext}` : ""}${articleBlock}${cryptoAskBlock}${stockAskBlock}${instrumentAskBlock}`;
   const conversation: ChatMessage[] = [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: message }];
 
   let reply: string;

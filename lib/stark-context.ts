@@ -8,41 +8,47 @@ import { SP500 } from "@/lib/stocks/sp500";
 import { computeStockSignals } from "@/lib/stocks/signals";
 import type { StockMarket } from "@/lib/stocks/types";
 
-export async function buildStarkContext(supabase: ReturnType<typeof createClient>) {
-  const { startISO, endISO, dateOnly } = todayRange();
-  const monthStart = `${dateOnly.slice(0, 7)}-01`;
+// Split into topic-scoped pieces so a narrow question (money, tasks, projects) doesn't pull
+// in the whole daily snapshot — app/api/stark/route.ts fetches only the pieces relevant to
+// what was actually asked, same principle already used for crypto/stock context below.
+// buildTodayContext is the one always-on baseline: it's genuinely small (2 queries, a
+// handful of rows) and central to Stark's "chief of staff" role on any question.
 
-  const [
-    { data: topTasks },
-    { data: overdueTasks },
-    { data: events },
-    { data: projects },
-    { data: goals },
-    { data: monthTx },
-    { data: assets },
-    { data: debts },
-  ] = await Promise.all([
+export async function buildTodayContext(supabase: ReturnType<typeof createClient>) {
+  const { startISO, endISO } = todayRange();
+
+  const [{ data: topTasks }, { data: events }] = await Promise.all([
     supabase.from("tasks").select("title, status, priority").eq("is_today_priority", true).is("archived_at", null),
-    supabase
-      .from("tasks")
-      .select("title, due_date")
-      .neq("status", "done")
-      .is("archived_at", null)
-      .lt("due_date", dateOnly)
-      .limit(10),
     supabase
       .from("schedule_events")
       .select("title, start_time")
       .is("archived_at", null)
       .gte("start_time", startISO)
       .lt("start_time", endISO),
-    supabase
-      .from("projects")
-      .select("name, status, next_action, blocker, explicit_progress")
-      .is("archived_at", null)
-      .order("priority", { ascending: true })
-      .limit(8),
-    supabase.from("goals").select("title, status, current_value, target_value, unit").is("archived_at", null).limit(8),
+  ]);
+
+  return `TOP 3 TODAY: ${(topTasks || []).map((t) => `${t.title} [${t.status}]`).join("; ") || "none set"}
+TODAY'S SCHEDULE: ${(events || []).map((e) => e.title).join("; ") || "nothing scheduled"}`;
+}
+
+export async function buildTasksContext(supabase: ReturnType<typeof createClient>) {
+  const { dateOnly } = todayRange();
+  const { data: overdueTasks } = await supabase
+    .from("tasks")
+    .select("title, due_date")
+    .neq("status", "done")
+    .is("archived_at", null)
+    .lt("due_date", dateOnly)
+    .limit(10);
+
+  return `OVERDUE TASKS: ${(overdueTasks || []).map((t) => `${t.title} (due ${t.due_date})`).join("; ") || "none"}`;
+}
+
+export async function buildMoneyContext(supabase: ReturnType<typeof createClient>) {
+  const { dateOnly } = todayRange();
+  const monthStart = `${dateOnly.slice(0, 7)}-01`;
+
+  const [{ data: monthTx }, { data: assets }, { data: debts }] = await Promise.all([
     supabase.from("transactions").select("type, amount").is("archived_at", null).gte("occurred_at", monthStart),
     supabase.from("assets").select("value").is("archived_at", null),
     supabase.from("debts").select("balance").is("archived_at", null),
@@ -53,16 +59,24 @@ export async function buildStarkContext(supabase: ReturnType<typeof createClient
   const totalAssets = (assets || []).reduce((s, a) => s + Number(a.value), 0);
   const totalDebts = (debts || []).reduce((s, d) => s + Number(d.balance), 0);
 
-  return `Live SNK LIFE OS data snapshot (do not invent numbers beyond this; say "unknown" if asked about something not listed here):
+  return `MONEY (this month): income ${income}, expense ${expense}. Total assets ${totalAssets}, total debts ${totalDebts}, net worth ${totalAssets - totalDebts}.`;
+}
 
-TOP 3 TODAY: ${(topTasks || []).map((t) => `${t.title} [${t.status}]`).join("; ") || "none set"}
-OVERDUE TASKS: ${(overdueTasks || []).map((t) => `${t.title} (due ${t.due_date})`).join("; ") || "none"}
-TODAY'S SCHEDULE: ${(events || []).map((e) => e.title).join("; ") || "nothing scheduled"}
-ACTIVE PROJECTS: ${(projects || [])
+export async function buildProjectsGoalsContext(supabase: ReturnType<typeof createClient>) {
+  const [{ data: projects }, { data: goals }] = await Promise.all([
+    supabase
+      .from("projects")
+      .select("name, status, next_action, blocker, explicit_progress")
+      .is("archived_at", null)
+      .order("priority", { ascending: true })
+      .limit(8),
+    supabase.from("goals").select("title, status, current_value, target_value, unit").is("archived_at", null).limit(8),
+  ]);
+
+  return `ACTIVE PROJECTS: ${(projects || [])
     .map((p) => `${p.name} [${p.status}, ${p.explicit_progress ?? "?"}%] next: ${p.next_action || "—"}${p.blocker ? ` blocker: ${p.blocker}` : ""}`)
     .join(" | ") || "none"}
-GOALS: ${(goals || []).map((g) => `${g.title} [${g.status}] ${g.current_value ?? "?"}/${g.target_value ?? "?"} ${g.unit || ""}`).join("; ") || "none"}
-MONEY (this month): income ${income}, expense ${expense}. Total assets ${totalAssets}, total debts ${totalDebts}, net worth ${totalAssets - totalDebts}.`;
+GOALS: ${(goals || []).map((g) => `${g.title} [${g.status}] ${g.current_value ?? "?"}/${g.target_value ?? "?"} ${g.unit || ""}`).join("; ") || "none"}`;
 }
 
 /** Live crypto snapshot for Stark, clearly separating fetched facts, derived calculations, and the one

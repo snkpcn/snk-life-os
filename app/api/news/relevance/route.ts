@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
-import { buildStarkContext } from "@/lib/stark-context";
+import { buildTodayContext, buildTasksContext, buildMoneyContext, buildProjectsGoalsContext } from "@/lib/stark-context";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ interpretation: null, reason: "not_connected" });
   }
 
-  const context = await buildStarkContext(supabase);
+  const [today, tasks, money, projectsGoals] = await Promise.all([
+    buildTodayContext(supabase),
+    buildTasksContext(supabase),
+    buildMoneyContext(supabase),
+    buildProjectsGoalsContext(supabase),
+  ]);
+  const context = [today, tasks, money, projectsGoals].join("\n");
   const anthropic = new Anthropic({ apiKey });
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
