@@ -32,8 +32,36 @@ async function runCheck(locale: "th" | "en") {
   }
 }
 
+// Diagnostic-only: gemini-3.6-flash is consistently 503/timing out (real, external Google
+// capacity issue, not our code) — probe a few alternative real Gemini model names directly to
+// find one actually reachable right now, before assuming the whole provider is unusable.
+const MODEL_CANDIDATES = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-pro-latest"];
+
+async function probeModel(model: string, apiKey: string): Promise<{ model: string; ok: boolean; status?: number; bodyPreview?: string; error?: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with exactly one word: ok" }] }] }),
+      signal: controller.signal,
+    });
+    const bodyText = await res.text().catch(() => "");
+    return { model, ok: res.ok, status: res.status, bodyPreview: bodyText.slice(0, 150) };
+  } catch (err: any) {
+    return { model, ok: false, error: err?.name === "AbortError" ? "timeout" : String(err?.message || err).slice(0, 150) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function GET() {
   const provider = getConfiguredProvider();
   const [th, en] = await Promise.all([runCheck("th"), runCheck("en")]);
-  return NextResponse.json({ providerId: provider?.id ?? null, th, en });
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const modelProbes = apiKey ? await Promise.all(MODEL_CANDIDATES.map((m) => probeModel(m, apiKey))) : [];
+
+  return NextResponse.json({ providerId: provider?.id ?? null, th, en, modelProbes });
 }
