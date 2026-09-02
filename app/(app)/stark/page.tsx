@@ -2,27 +2,17 @@
 
 import { useRef, useState } from "react";
 import { Card } from "@/components/ui";
+import { useI18n } from "@/lib/i18n/context";
 
 type Message = { role: "user" | "assistant"; content: string };
 
-const CHIPS = [
-  "What's most important right now?",
-  "How's my money looking?",
-  "Which project needs to move?",
-  "What should I do next?",
-];
-
 export default function StarkPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "I'm Stark. I answer only from your real data in Life OS — tasks, schedule, projects, goals, and money. Ask me anything.",
-    },
-  ]);
+  const { t, locale } = useI18n();
+  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: t("starkPage.intro") }]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chips = [t("starkPage.chip1"), t("starkPage.chip2"), t("starkPage.chip3"), t("starkPage.chip4")];
 
   async function send(text: string) {
     const trimmed = text.trim();
@@ -35,12 +25,12 @@ export default function StarkPage() {
       const res = await fetch("/api/stark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, history: nextMessages }),
+        body: JSON.stringify({ message: trimmed, history: nextMessages, locale }),
       });
       const data = await res.json();
       setMessages((m) => [...m, { role: "assistant", content: data.reply || data.error || "…" }]);
     } catch {
-      setMessages((m) => [...m, { role: "assistant", content: "Something went wrong reaching Stark. Try again." }]);
+      setMessages((m) => [...m, { role: "assistant", content: t("starkPage.error") }]);
     } finally {
       setBusy(false);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -54,13 +44,13 @@ export default function StarkPage() {
           S
         </div>
         <div>
-          <div className="text-[11px] uppercase tracking-[0.12em] text-gold">Executive Copilot</div>
-          <h1 className="text-lg font-bold">Ask Stark about your Life OS</h1>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-gold">{t("starkPage.kicker")}</div>
+          <h1 className="text-lg font-bold">{t("starkPage.title")}</h1>
         </div>
       </Card>
 
       <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-        {CHIPS.map((c) => (
+        {chips.map((c) => (
           <button
             key={c}
             onClick={() => send(c)}
@@ -84,7 +74,11 @@ export default function StarkPage() {
             {m.content}
           </div>
         ))}
-        {busy && <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-line bg-panel2 px-4 py-3 text-sm text-muted">Thinking…</div>}
+        {busy && (
+          <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-line bg-panel2 px-4 py-3 text-sm text-muted">
+            {t("starkPage.thinking")}
+          </div>
+        )}
         <div ref={bottomRef} />
       </Card>
 
@@ -93,7 +87,7 @@ export default function StarkPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send(input)}
-          placeholder="Ask Stark…"
+          placeholder={t("starkPage.placeholder")}
           className="h-11 flex-1 rounded-xl bg-bg px-3 text-ink outline-none"
         />
         <button

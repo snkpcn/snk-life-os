@@ -5,6 +5,7 @@ import { Card, SectionHead } from "@/components/ui";
 import { TradingViewChart } from "@/components/tradingview-widget";
 import { ResourceSection } from "@/components/resource-section";
 import { RESOURCES } from "@/lib/resources";
+import { useI18n } from "@/lib/i18n/context";
 
 const PRESETS = [
   { label: "ADVANC", symbol: "SET:ADVANC" },
@@ -18,14 +19,15 @@ const PRESETS = [
 ];
 
 export default function MarketsPage() {
+  const { t } = useI18n();
   const [symbol, setSymbol] = useState(PRESETS[0].symbol);
 
   return (
     <div>
       <Card className="bg-gradient-to-br from-panel to-panel2">
-        <div className="text-[11px] uppercase tracking-[0.12em] text-gold">Market Intelligence</div>
-        <h1 className="my-2 text-2xl font-extrabold">Markets</h1>
-        <p className="text-muted">Thai stocks · US stocks · Gold · USD/THB</p>
+        <div className="text-[11px] uppercase tracking-[0.12em] text-gold">{t("marketsPage.kicker")}</div>
+        <h1 className="my-2 text-2xl font-extrabold">{t("marketsPage.title")}</h1>
+        <p className="text-muted">{t("marketsPage.subtitle")}</p>
       </Card>
 
       <div className="my-4 flex gap-2 overflow-x-auto pb-1">
@@ -46,7 +48,7 @@ export default function MarketsPage() {
         <TradingViewChart symbol={symbol} />
       </Card>
 
-      <SectionHead title="Price Alerts" />
+      <SectionHead title={t("marketsPage.priceAlerts")} />
       <ResourceSection resource={RESOURCES.price_alerts} hideCreate={false} />
     </div>
   );

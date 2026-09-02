@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { RESOURCES } from "@/lib/resources";
 import { ALL_NAV } from "@/components/nav-config";
 import { Sheet } from "@/components/ui";
+import { useI18n } from "@/lib/i18n/context";
+import { translateResourceLabel } from "@/lib/i18n";
 
 type Hit = { table: string; id: string; title: string; subtitle: string; nav?: string };
 
@@ -13,6 +15,7 @@ const SEARCHABLE = Object.values(RESOURCES).filter((r) => r.searchKeys?.length);
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [busy, setBusy] = useState(false);
@@ -27,14 +30,14 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const navHits: Hit[] = useMemo(() => {
     if (!q) return [];
     const lower = q.toLowerCase();
-    return ALL_NAV.filter((n) => n.label.toLowerCase().includes(lower)).map((n) => ({
+    return ALL_NAV.filter((n) => t(n.labelKey).toLowerCase().includes(lower)).map((n) => ({
       table: "nav",
       id: n.href,
-      title: n.label,
-      subtitle: "Go to section",
+      title: t(n.labelKey),
+      subtitle: t("search.goToSection"),
       nav: n.href,
     }));
-  }, [q]);
+  }, [q, t]);
 
   useEffect(() => {
     if (!q || q.length < 2) {
@@ -54,7 +57,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               table: r.table,
               id: row.id,
               title: String(row[r.titleKey] ?? "(untitled)"),
-              subtitle: r.labelPlural,
+              subtitle: translateResourceLabel(locale, r.key, "labelPlural", r.labelPlural),
             });
           });
         })
@@ -63,22 +66,22 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       setBusy(false);
     }, 250);
     return () => clearTimeout(timer);
-  }, [q]);
+  }, [q, locale]);
 
   const combined = [...navHits, ...hits];
 
   return (
-    <Sheet open={open} onClose={onClose} title="Search">
+    <Sheet open={open} onClose={onClose} title={t("common.search")}>
       <input
         autoFocus
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Search tasks, projects, transactions, notes…"
+        placeholder={t("search.placeholder")}
         className="mb-3 h-12 w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
       />
-      {busy && <div className="py-2 text-sm text-muted">Searching…</div>}
+      {busy && <div className="py-2 text-sm text-muted">{t("search.searching")}</div>}
       {!busy && q.length >= 2 && combined.length === 0 && (
-        <div className="py-2 text-sm text-muted">No matches.</div>
+        <div className="py-2 text-sm text-muted">{t("search.noMatches")}</div>
       )}
       <div className="max-h-[50vh] overflow-y-auto">
         {combined.map((h) => (

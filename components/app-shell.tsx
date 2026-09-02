@@ -7,11 +7,14 @@ import { PRIMARY_NAV, MORE_NAV } from "@/components/nav-config";
 import { Sheet } from "@/components/ui";
 import { CommandPalette } from "@/components/command-palette";
 import { QuickAdd } from "@/components/quick-add";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { createClient } from "@/lib/supabase/client";
+import { useI18n } from "@/lib/i18n/context";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useI18n();
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -38,22 +41,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto min-h-screen max-w-3xl pb-28">
       <header className="safe-top sticky top-0 z-40 flex items-center justify-between border-b border-line bg-bg/90 px-4 py-3 backdrop-blur">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.19em] text-gold">
-            Executive Command Center
-          </div>
-          <div className="text-xl font-extrabold tracking-tight">SNK LIFE OS</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.19em] text-gold">{t("common.tagline")}</div>
+          <div className="text-xl font-extrabold tracking-tight">{t("common.appName")}</div>
         </div>
         <div className="flex items-center gap-2">
+          <LanguageSwitcher className="hidden sm:flex" />
           <button
             onClick={() => setSearchOpen(true)}
-            aria-label="Search"
+            aria-label={t("common.search")}
             className="grid h-10 w-10 place-items-center rounded-full border border-line bg-panel text-ink"
           >
             ⌕
           </button>
           <button
             onClick={() => setAddOpen(true)}
-            aria-label="Quick add"
+            aria-label={t("quickAdd.title")}
             className="grid h-10 w-10 place-items-center rounded-full border border-line bg-panel text-xl text-ink"
           >
             ＋
@@ -79,7 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 {item.icon}
               </span>
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           );
         })}
@@ -88,11 +90,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="flex min-h-[58px] flex-1 flex-col items-center justify-center gap-1 rounded-2xl text-[10px] font-bold text-muted"
         >
           <span className="text-lg">⋯</span>
-          More
+          {t("nav.more")}
         </button>
       </nav>
 
-      <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="More" wide>
+      <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title={t("nav.more")} wide>
+        <LanguageSwitcher className="mb-3 flex w-fit sm:hidden" />
         <div className="grid grid-cols-3 gap-2">
           {MORE_NAV.map((item) => (
             <Link
@@ -104,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }`}
             >
               <span className="text-xl">{item.icon}</span>
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           ))}
           <button
@@ -112,7 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="flex flex-col items-center gap-2 rounded-xl border border-red/30 p-4 text-center text-xs font-semibold text-red"
           >
             <span className="text-xl">⏻</span>
-            Log out
+            {t("nav.logout")}
           </button>
         </div>
       </Sheet>

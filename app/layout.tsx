@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import "./globals.css";
+import { I18nProvider } from "@/lib/i18n/context";
+import { LOCALE_COOKIE, isLocale, type Locale } from "@/lib/i18n";
 
 export const metadata: Metadata = {
   title: "SNK LIFE OS",
@@ -14,9 +17,14 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieLocale = cookies().get(LOCALE_COOKIE)?.value;
+  const initialLocale: Locale = isLocale(cookieLocale) ? cookieLocale : "th";
+
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-bg text-ink font-sans antialiased">{children}</body>
+    <html lang={initialLocale} className="dark">
+      <body className="min-h-screen bg-bg text-ink font-sans antialiased">
+        <I18nProvider initialLocale={initialLocale}>{children}</I18nProvider>
+      </body>
     </html>
   );
 }

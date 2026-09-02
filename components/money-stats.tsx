@@ -4,15 +4,19 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
+import { todayRange } from "@/lib/date-range";
+import { useI18n } from "@/lib/i18n/context";
 
 export function MoneyStats({ refreshKey }: { refreshKey?: number }) {
+  const { t, locale } = useI18n();
   const [stats, setStats] = useState<{ income: number; expense: number; assets: number; debts: number } | null>(
     null
   );
 
   useEffect(() => {
     const supabase = createClient();
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const { dateOnly } = todayRange();
+    const monthStart = `${dateOnly.slice(0, 7)}-01`;
     (async () => {
       const [{ data: tx }, { data: assets }, { data: debts }] = await Promise.all([
         supabase.from("transactions").select("type, amount").is("archived_at", null).gte("occurred_at", monthStart),
@@ -30,22 +34,22 @@ export function MoneyStats({ refreshKey }: { refreshKey?: number }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <Card>
-        <b className="block text-xs text-muted">Income (mo)</b>
-        <span className="mt-2 block text-lg font-bold">{formatMoney(stats?.income)}</span>
+        <b className="block text-xs text-muted">{t("moneyPage.incomeMo")}</b>
+        <span className="mt-2 block text-lg font-bold">{formatMoney(stats?.income, "THB", locale)}</span>
       </Card>
       <Card>
-        <b className="block text-xs text-muted">Expense (mo)</b>
-        <span className="mt-2 block text-lg font-bold">{formatMoney(stats?.expense)}</span>
+        <b className="block text-xs text-muted">{t("moneyPage.expenseMo")}</b>
+        <span className="mt-2 block text-lg font-bold">{formatMoney(stats?.expense, "THB", locale)}</span>
       </Card>
       <Card>
-        <b className="block text-xs text-muted">Net Worth</b>
+        <b className="block text-xs text-muted">{t("moneyPage.netWorth")}</b>
         <span className="mt-2 block text-lg font-bold">
-          {stats ? formatMoney(stats.assets - stats.debts) : "—"}
+          {stats ? formatMoney(stats.assets - stats.debts, "THB", locale) : "—"}
         </span>
       </Card>
       <Card>
-        <b className="block text-xs text-muted">Total Debts</b>
-        <span className="mt-2 block text-lg font-bold">{formatMoney(stats?.debts)}</span>
+        <b className="block text-xs text-muted">{t("moneyPage.totalDebts")}</b>
+        <span className="mt-2 block text-lg font-bold">{formatMoney(stats?.debts, "THB", locale)}</span>
       </Card>
     </div>
   );

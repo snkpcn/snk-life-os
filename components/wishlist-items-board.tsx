@@ -7,6 +7,8 @@ import { ResourceForm } from "@/components/resource-form";
 import { Btn, Card, EmptyState, SectionHead, Sheet } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import { markWishlistItemPurchased } from "@/lib/wishlist-actions";
+import { useI18n } from "@/lib/i18n/context";
+import { translateOption } from "@/lib/i18n";
 
 type WishlistItem = {
   id: string;
@@ -19,6 +21,7 @@ type WishlistItem = {
 type Account = { id: string; name: string };
 
 export function WishlistItemsBoard() {
+  const { t, locale } = useI18n();
   const [items, setItems] = useState<WishlistItem[] | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [editing, setEditing] = useState<WishlistItem | null | "new">(null);
@@ -70,23 +73,23 @@ export function WishlistItemsBoard() {
   return (
     <div>
       <SectionHead
-        title="Wishlist"
+        title={t("wishlistPage.items")}
         action={
           <Btn variant="gold" onClick={() => setEditing("new")}>
-            ＋ Item
+            ＋ {t("wishlistPage.newItem")}
           </Btn>
         }
       />
       <Card>
-        {items === null && <EmptyState label="Loading…" />}
-        {items !== null && items.length === 0 && <EmptyState label="Wishlist is empty." />}
+        {items === null && <EmptyState label={t("common.loading")} />}
+        {items !== null && items.length === 0 && <EmptyState label={t("wishlistPage.empty")} />}
         {items?.map((item) => (
           <div key={item.id} className="flex items-center justify-between gap-3 border-b border-line py-3 last:border-0">
             <button className="flex-1 text-left" onClick={() => setEditing(item)}>
               <b className="block text-sm">{item.name}</b>
               <small className="text-muted">
-                {formatMoney(item.current_estimated_price ?? item.target_price, item.currency || "THB")} ·{" "}
-                {item.status}
+                {formatMoney(item.current_estimated_price ?? item.target_price, item.currency || "THB", locale)} ·{" "}
+                {translateOption(locale, item.status, item.status)}
               </small>
             </button>
             {item.status !== "purchased" ? (
@@ -97,10 +100,12 @@ export function WishlistItemsBoard() {
                   setPrice(String(item.target_price ?? item.current_estimated_price ?? ""));
                 }}
               >
-                Mark Purchased
+                {t("wishlistPage.markPurchased")}
               </Btn>
             ) : (
-              <span className="rounded-full bg-green/10 px-2 py-1 text-[10px] uppercase text-green">Purchased</span>
+              <span className="rounded-full bg-green/10 px-2 py-1 text-[10px] uppercase text-green">
+                {t("wishlistPage.purchased")}
+              </span>
             )}
           </div>
         ))}
@@ -109,7 +114,7 @@ export function WishlistItemsBoard() {
       <Sheet
         open={editing !== null}
         onClose={() => setEditing(null)}
-        title={editing === "new" ? "New Wishlist Item" : "Edit Wishlist Item"}
+        title={editing === "new" ? t("common.newItem", { item: t("wishlistPage.newItem") }) : t("common.editItem", { item: t("wishlistPage.newItem") })}
       >
         <ResourceForm
           resource={RESOURCES.wishlist_items}
@@ -122,10 +127,10 @@ export function WishlistItemsBoard() {
         />
       </Sheet>
 
-      <Sheet open={purchasing !== null} onClose={() => setPurchasing(null)} title="Mark as Purchased">
+      <Sheet open={purchasing !== null} onClose={() => setPurchasing(null)} title={t("wishlistPage.markPurchased")}>
         <div className="space-y-3">
           <div>
-            <label className="mb-1 block text-[11px] text-muted">Actual price paid</label>
+            <label className="mb-1 block text-[11px] text-muted">{t("wishlistPage.actualPrice")}</label>
             <input
               type="number"
               step="0.01"
@@ -135,13 +140,13 @@ export function WishlistItemsBoard() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] text-muted">Paid from account</label>
+            <label className="mb-1 block text-[11px] text-muted">{t("wishlistPage.paidFromAccount")}</label>
             <select
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
               className="h-12 w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
             >
-              <option value="">None</option>
+              <option value="">{t("common.none")}</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
@@ -150,7 +155,7 @@ export function WishlistItemsBoard() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] text-muted">Purchase date</label>
+            <label className="mb-1 block text-[11px] text-muted">{t("wishlistPage.purchaseDate")}</label>
             <input
               type="date"
               value={date}
@@ -159,13 +164,11 @@ export function WishlistItemsBoard() {
             />
           </div>
           {error && <div className="rounded-lg bg-red/10 px-3 py-2 text-sm text-red">{error}</div>}
-          <p className="text-xs text-muted">
-            This will create an expense transaction and link it to this item.
-          </p>
+          <p className="text-xs text-muted">{t("wishlistPage.purchaseHint")}</p>
           <div className="grid grid-cols-2 gap-2">
-            <Btn onClick={() => setPurchasing(null)}>Cancel</Btn>
+            <Btn onClick={() => setPurchasing(null)}>{t("common.cancel")}</Btn>
             <Btn variant="gold" disabled={busy} onClick={confirmPurchase}>
-              {busy ? "Saving…" : "Confirm Purchase"}
+              {busy ? t("common.saving") : t("wishlistPage.confirmPurchase")}
             </Btn>
           </div>
         </div>

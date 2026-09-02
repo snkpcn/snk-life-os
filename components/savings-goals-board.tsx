@@ -7,10 +7,12 @@ import { ResourceForm } from "@/components/resource-form";
 import { Btn, Card, EmptyState, SectionHead, Sheet } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import { computeSavingsBalance } from "@/lib/wishlist-actions";
+import { useI18n } from "@/lib/i18n/context";
 
 type Goal = { id: string; name: string; target_amount: number; currency: string | null; status: string };
 
 export function SavingsGoalsBoard() {
+  const { t, locale } = useI18n();
   const [goals, setGoals] = useState<Goal[] | null>(null);
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [editing, setEditing] = useState<Goal | null | "new">(null);
@@ -70,16 +72,16 @@ export function SavingsGoalsBoard() {
   return (
     <div>
       <SectionHead
-        title="Savings Goals"
+        title={t("wishlistPage.goals")}
         action={
           <Btn variant="gold" onClick={() => setEditing("new")}>
-            ＋ Goal
+            ＋ {t("wishlistPage.newGoal")}
           </Btn>
         }
       />
       <Card>
-        {goals === null && <EmptyState label="Loading…" />}
-        {goals !== null && goals.length === 0 && <EmptyState label="No savings goals yet." />}
+        {goals === null && <EmptyState label={t("common.loading")} />}
+        {goals !== null && goals.length === 0 && <EmptyState label={t("wishlistPage.noSavingsGoals")} />}
         {goals?.map((g) => {
           const saved = balances[g.id] || 0;
           const pct = g.target_amount ? Math.max(0, Math.min(100, (saved / g.target_amount) * 100)) : 0;
@@ -89,11 +91,11 @@ export function SavingsGoalsBoard() {
                 <button className="flex-1 text-left" onClick={() => setEditing(g)}>
                   <b className="block text-sm">{g.name}</b>
                   <small className="text-muted">
-                    {formatMoney(saved, g.currency || "THB")} / {formatMoney(g.target_amount, g.currency || "THB")}
+                    {formatMoney(saved, g.currency || "THB", locale)} / {formatMoney(g.target_amount, g.currency || "THB", locale)}
                   </small>
                 </button>
                 <Btn variant="gold" onClick={() => setContributingTo(g)}>
-                  ＋ Contribute
+                  ＋ {t("wishlistPage.contribute")}
                 </Btn>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-panel2">
@@ -104,7 +106,11 @@ export function SavingsGoalsBoard() {
         })}
       </Card>
 
-      <Sheet open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "New Savings Goal" : "Edit Savings Goal"}>
+      <Sheet
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={editing === "new" ? t("common.newItem", { item: t("wishlistPage.newGoal") }) : t("common.editItem", { item: t("wishlistPage.newGoal") })}
+      >
         <ResourceForm
           resource={RESOURCES.savings_goals}
           existing={editing && editing !== "new" ? editing : null}
@@ -116,21 +122,21 @@ export function SavingsGoalsBoard() {
         />
       </Sheet>
 
-      <Sheet open={contributingTo !== null} onClose={() => setContributingTo(null)} title="Add Contribution">
+      <Sheet open={contributingTo !== null} onClose={() => setContributingTo(null)} title={t("wishlistPage.contribute")}>
         <div className="space-y-3">
           <div>
-            <label className="mb-1 block text-[11px] text-muted">Type</label>
+            <label className="mb-1 block text-[11px] text-muted">{t("wishlistPage.contributionType")}</label>
             <select
               value={entryType}
               onChange={(e) => setEntryType(e.target.value as "contribution" | "withdrawal")}
               className="h-12 w-full rounded-xl border border-line bg-bg px-3 text-ink outline-none focus:border-gold"
             >
-              <option value="contribution">Contribution (+)</option>
-              <option value="withdrawal">Withdrawal (-)</option>
+              <option value="contribution">{t("wishlistPage.contribution")}</option>
+              <option value="withdrawal">{t("wishlistPage.withdrawal")}</option>
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] text-muted">Amount</label>
+            <label className="mb-1 block text-[11px] text-muted">{t("wishlistPage.amount")}</label>
             <input
               type="number"
               step="0.01"
@@ -140,9 +146,9 @@ export function SavingsGoalsBoard() {
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Btn onClick={() => setContributingTo(null)}>Cancel</Btn>
+            <Btn onClick={() => setContributingTo(null)}>{t("common.cancel")}</Btn>
             <Btn variant="gold" disabled={busy} onClick={submitContribution}>
-              {busy ? "Saving…" : "Save"}
+              {busy ? t("common.saving") : t("common.save")}
             </Btn>
           </div>
         </div>

@@ -6,15 +6,18 @@ import type { ResourceDef } from "@/lib/resources";
 import { Btn, Card, EmptyState, SectionHead, Sheet, ConfirmBar } from "@/components/ui";
 import { ResourceForm } from "@/components/resource-form";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/context";
+import { translateResourceLabel, translateFieldLabel, translateOption, type Locale } from "@/lib/i18n";
 
-function displayValue(resource: ResourceDef, row: Record<string, any>, key: string) {
+function displayValue(resource: ResourceDef, row: Record<string, any>, key: string, locale: Locale) {
   const field = resource.fields.find((f) => f.key === key);
   const v = row[key];
   if (v === null || v === undefined || v === "") return null;
-  if (field?.type === "money") return formatMoney(Number(v), (row.currency as string) || "THB");
-  if (field?.type === "date") return formatDate(v);
-  if (field?.type === "datetime") return formatDateTime(v);
-  if (field?.type === "boolean") return v ? field.label : null;
+  if (field?.type === "money") return formatMoney(Number(v), (row.currency as string) || "THB", locale);
+  if (field?.type === "date") return formatDate(v, locale);
+  if (field?.type === "datetime") return formatDateTime(v, locale);
+  if (field?.type === "boolean") return v ? translateFieldLabel(locale, resource.key, field.key, field.label) : null;
+  if (field?.type === "select" && typeof v === "string") return translateOption(locale, v, v);
   if (Array.isArray(v)) return v.join(", ");
   if (key === row.id) return null;
   return String(v);
@@ -35,6 +38,9 @@ export function ResourceSection({
   onChange?: () => void;
   limit?: number;
 }) {
+  const { t, locale } = useI18n();
+  const label = translateResourceLabel(locale, resource.key, "label", resource.label);
+  const labelPlural = translateResourceLabel(locale, resource.key, "labelPlural", resource.labelPlural);
   const [rows, setRows] = useState<Record<string, any>[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState(false);
@@ -83,7 +89,7 @@ export function ResourceSection({
     <div>
       {!hideCreate && (
         <SectionHead
-          title={resource.labelPlural}
+          title={labelPlural}
           action={
             <Btn
               variant="gold"
@@ -92,7 +98,7 @@ export function ResourceSection({
                 setOpenForm(true);
               }}
             >
-              ＋ {resource.label}
+              ＋ {label}
             </Btn>
           }
         />
@@ -101,19 +107,21 @@ export function ResourceSection({
       {error && <div className="mb-2 rounded-lg bg-red/10 px-3 py-2 text-sm text-red">{error}</div>}
 
       <Card className={compact ? "p-2" : undefined}>
-        {rows === null && <EmptyState label="Loading…" />}
-        {rows !== null && rows.length === 0 && <EmptyState label={`No ${resource.labelPlural.toLowerCase()} yet.`} />}
+        {rows === null && <EmptyState label={t("common.loading")} />}
+        {rows !== null && rows.length === 0 && (
+          <EmptyState label={t("common.noItemsYet", { items: labelPlural.toLowerCase() })} />
+        )}
         {rows !== null &&
           rows.map((row) => {
             const subtitle = (resource.subtitleKeys || [])
-              .map((k) => displayValue(resource, row, k))
+              .map((k) => displayValue(resource, row, k, locale))
               .filter(Boolean)
               .join(" · ");
             return (
               <div key={row.id} className="border-b border-line py-3 last:border-b-0">
                 {confirmId === row.id ? (
                   <ConfirmBar
-                    message={`Remove this ${resource.label.toLowerCase()}?`}
+                    message={t("common.confirmRemove", { item: label.toLowerCase() })}
                     onConfirm={() => handleDelete(row.id)}
                     onCancel={() => setConfirmId(null)}
                   />
@@ -126,7 +134,7 @@ export function ResourceSection({
                         setOpenForm(true);
                       }}
                     >
-                      <b className="block text-sm">{displayValue(resource, row, resource.titleKey) || "(untitled)"}</b>
+                      <b className="block text-sm">{displayValue(resource, row, resource.titleKey, locale) || "(untitled)"}</b>
                       {subtitle && <small className="mt-1 block text-muted">{subtitle}</small>}
                     </button>
                     <div className="flex shrink-0 gap-1">
@@ -136,10 +144,10 @@ export function ResourceSection({
                           setOpenForm(true);
                         }}
                       >
-                        Edit
+                        {t("common.edit")}
                       </Btn>
                       <Btn variant="danger" onClick={() => setConfirmId(row.id)}>
-                        {resource.softDeleteColumn ? "Archive" : "Delete"}
+                        {resource.softDeleteColumn ? t("common.archive") : t("common.delete")}
                       </Btn>
                     </div>
                   </div>
@@ -152,7 +160,7 @@ export function ResourceSection({
       <Sheet
         open={openForm}
         onClose={() => setOpenForm(false)}
-        title={editing ? `Edit ${resource.label}` : `New ${resource.label}`}
+        title={editing ? t("common.editItem", { item: label }) : t("common.newItem", { item: label })}
       >
         <ResourceForm
           resource={resource}

@@ -3,10 +3,13 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { useI18n } from "@/lib/i18n/context";
 
 const MAGIC_LINK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_MAGIC_LINK === "true";
 
 function LoginForm() {
+  const { t } = useI18n();
   const params = useSearchParams();
   const next = params.get("next") || "/";
   const [mode, setMode] = useState<"password" | "magic">("password");
@@ -46,16 +49,17 @@ function LoginForm() {
       setError(error.message);
       return;
     }
-    setMessage("Check your email for a sign-in link.");
+    setMessage(t("login.checkEmail"));
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center p-5">
       <div className="w-full max-w-sm rounded-xl2 border border-line bg-panel p-6 shadow-2xl">
-        <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.19em] text-gold">
-          Executive Command Center
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-[11px] font-bold uppercase tracking-[0.19em] text-gold">{t("login.subtitle")}</div>
+          <LanguageSwitcher />
         </div>
-        <h1 className="mb-6 text-2xl font-extrabold tracking-tight">SNK LIFE OS</h1>
+        <h1 className="mb-6 text-2xl font-extrabold tracking-tight">{t("login.title")}</h1>
 
         {MAGIC_LINK_ENABLED && (
           <div className="mb-5 flex gap-2 rounded-xl bg-bg p-1">
@@ -66,7 +70,7 @@ function LoginForm() {
                 mode === "password" ? "bg-panel2 text-ink" : "text-muted"
               }`}
             >
-              Password
+              {t("login.passwordMode")}
             </button>
             <button
               type="button"
@@ -75,7 +79,7 @@ function LoginForm() {
                 mode === "magic" ? "bg-panel2 text-ink" : "text-muted"
               }`}
             >
-              Magic Link
+              {t("login.magicLinkMode")}
             </button>
           </div>
         )}
@@ -85,7 +89,7 @@ function LoginForm() {
           className="space-y-3"
         >
           <div>
-            <label className="mb-1 block text-[11px] text-muted">Email</label>
+            <label className="mb-1 block text-[11px] text-muted">{t("login.email")}</label>
             <input
               required
               type="email"
@@ -98,7 +102,7 @@ function LoginForm() {
 
           {(mode === "password" || !MAGIC_LINK_ENABLED) && (
             <div>
-              <label className="mb-1 block text-[11px] text-muted">Password</label>
+              <label className="mb-1 block text-[11px] text-muted">{t("login.password")}</label>
               <input
                 required
                 type="password"
@@ -121,7 +125,7 @@ function LoginForm() {
             type="submit"
             className="h-12 w-full rounded-xl bg-gradient-to-br from-gold to-goldDark font-bold text-[#17130c] disabled:opacity-60"
           >
-            {busy ? "Please wait…" : mode === "magic" && MAGIC_LINK_ENABLED ? "Send magic link" : "Sign in"}
+            {busy ? t("login.signingIn") : mode === "magic" && MAGIC_LINK_ENABLED ? t("login.sendMagicLink") : t("login.signIn")}
           </button>
         </form>
       </div>

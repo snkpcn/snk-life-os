@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useI18n } from "@/lib/i18n/context";
 
 export function Card({ className = "", children }: { className?: string; children: React.ReactNode }) {
   return (
@@ -132,15 +133,16 @@ export function ConfirmBar({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex items-center justify-between gap-2 rounded-xl border border-red/30 bg-red/10 p-3 text-sm">
       <span>{message}</span>
       <div className="flex gap-2">
         <Btn variant="ghost" onClick={onCancel}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="danger" onClick={onConfirm}>
-          Confirm
+          {t("common.confirm")}
         </Btn>
       </div>
     </div>

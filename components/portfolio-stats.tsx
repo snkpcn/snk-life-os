@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/context";
 
 export function PortfolioStats({ refreshKey }: { refreshKey?: number }) {
+  const { t, locale } = useI18n();
   const [stats, setStats] = useState<{ costBasis: number; count: number } | null>(null);
 
   useEffect(() => {
@@ -20,13 +22,13 @@ export function PortfolioStats({ refreshKey }: { refreshKey?: number }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <Card>
-        <b className="block text-xs text-muted">Holdings</b>
+        <b className="block text-xs text-muted">{t("portfolioPage.holdings")}</b>
         <span className="mt-2 block text-xl font-bold">{stats?.count ?? "—"}</span>
       </Card>
       <Card>
-        <b className="block text-xs text-muted">Cost Basis</b>
-        <span className="mt-2 block text-xl font-bold">{formatMoney(stats?.costBasis)}</span>
-        <small className="text-muted">No live market data connected</small>
+        <b className="block text-xs text-muted">{t("portfolioPage.costBasis")}</b>
+        <span className="mt-2 block text-xl font-bold">{formatMoney(stats?.costBasis, "THB", locale)}</span>
+        <small className="text-muted">{t("portfolioPage.noLiveMarketData")}</small>
       </Card>
     </div>
   );

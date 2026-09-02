@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import type { FieldDef, ResourceDef } from "@/lib/resources";
 import { Btn } from "@/components/ui";
 import { toDateInputValue, toDateTimeInputValue } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/context";
+import { translateFieldLabel, translateOption, type Locale } from "@/lib/i18n";
 
 type RelationOption = { value: string; label: string };
 
@@ -44,7 +46,7 @@ function useRelationOptions(fields: FieldDef[]) {
   return options;
 }
 
-function fieldInitialValue(field: FieldDef, existing: Record<string, unknown> | null) {
+function fieldInitialValue(field: FieldDef, existing: Record<string, unknown> | null, prefill?: Record<string, unknown>) {
   if (existing && field.key in existing) {
     const v = existing[field.key];
     if (field.type === "date") return toDateInputValue(v as string);
@@ -53,6 +55,7 @@ function fieldInitialValue(field: FieldDef, existing: Record<string, unknown> | 
     if (field.type === "boolean") return Boolean(v);
     return v ?? "";
   }
+  if (prefill && field.key in prefill) return prefill[field.key];
   if (field.default !== undefined) return field.default;
   if (field.type === "boolean") return false;
   return "";
@@ -61,19 +64,23 @@ function fieldInitialValue(field: FieldDef, existing: Record<string, unknown> | 
 export function ResourceForm({
   resource,
   existing,
+  prefill,
   onCancel,
   onSaved,
 }: {
   resource: ResourceDef;
   existing?: Record<string, unknown> | null;
+  /** Initial values for a brand-new record (e.g. pre-filling a task title from a news story). Ignored when editing. */
+  prefill?: Record<string, unknown>;
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t, locale } = useI18n();
   const relationOptions = useRelationOptions(resource.fields);
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     const init: Record<string, unknown> = {};
     resource.fields.forEach((f) => {
-      init[f.key] = fieldInitialValue(f, existing ?? null);
+      init[f.key] = fieldInitialValue(f, existing ?? null, prefill);
     });
     return init;
   });
@@ -132,10 +139,12 @@ export function ResourceForm({
       {resource.fields.map((f) => (
         <FieldInput
           key={f.key}
+          resourceKey={resource.key}
           field={f}
           value={values[f.key]}
           onChange={(v) => setValue(f.key, v)}
-          options={f.type === "relation" ? relationOptions[f.key] : f.options}
+          options={f.type === "relation" ? relationOptions[f.key] : undefined}
+          locale={locale}
         />
       ))}
 
@@ -143,10 +152,10 @@ export function ResourceForm({
 
       <div className="grid grid-cols-2 gap-2 pt-2">
         <Btn variant="ghost" onClick={onCancel} className="border border-line">
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="gold" type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? t("common.saving") : t("common.save")}
         </Btn>
       </div>
     </form>
@@ -154,23 +163,29 @@ export function ResourceForm({
 }
 
 function FieldInput({
+  resourceKey,
   field,
   value,
   onChange,
   options,
+  locale,
 }: {
+  resourceKey: string;
   field: FieldDef;
   value: unknown;
   onChange: (v: unknown) => void;
   options?: { value: string; label: string }[];
+  locale: Locale;
 }) {
+  const { t } = useI18n();
   const base =
     "w-full rounded-xl border border-line bg-bg px-3 py-3 text-ink outline-none focus:border-gold min-h-[46px]";
+  const label = translateFieldLabel(locale, resourceKey, field.key, field.label);
 
   if (field.type === "boolean") {
     return (
       <label className="flex items-center justify-between rounded-xl border border-line bg-bg px-3 py-3">
-        <span className="text-sm text-muted">{field.label}</span>
+        <span className="text-sm text-muted">{label}</span>
         <input
           type="checkbox"
           checked={Boolean(value)}
@@ -184,7 +199,7 @@ function FieldInput({
   if (field.type === "textarea") {
     return (
       <div>
-        <label className="mb-1 block text-[11px] text-muted">{field.label}</label>
+        <label className="mb-1 block text-[11px] text-muted">{label}</label>
         <textarea
           required={field.required}
           value={(value as string) ?? ""}
@@ -197,19 +212,20 @@ function FieldInput({
   }
 
   if (field.type === "select" || field.type === "relation") {
+    const selectOptions = field.type === "select" ? field.options : options;
     return (
       <div>
-        <label className="mb-1 block text-[11px] text-muted">{field.label}</label>
+        <label className="mb-1 block text-[11px] text-muted">{label}</label>
         <select
           required={field.required}
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}
           className={base}
         >
-          <option value="">{field.type === "relation" ? "None" : "Select…"}</option>
-          {(options || []).map((o) => (
+          <option value="">{field.type === "relation" ? t("common.none") : t("common.select")}</option>
+          {(selectOptions || []).map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {field.type === "select" ? translateOption(locale, o.value, o.label) : o.label}
             </option>
           ))}
         </select>
@@ -228,7 +244,7 @@ function FieldInput({
 
   return (
     <div>
-      <label className="mb-1 block text-[11px] text-muted">{field.label}</label>
+      <label className="mb-1 block text-[11px] text-muted">{label}</label>
       <input
         required={field.required}
         type={inputType}

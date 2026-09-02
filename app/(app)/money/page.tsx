@@ -5,19 +5,20 @@ import { Tabs, useActiveTab } from "@/components/tabs";
 import { MoneyStats } from "@/components/money-stats";
 import { ResourceSection } from "@/components/resource-section";
 import { RESOURCES } from "@/lib/resources";
-
-const TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "accounts", label: "Accounts" },
-  { key: "transactions", label: "Transactions" },
-  { key: "budgets", label: "Budgets" },
-  { key: "assets", label: "Assets" },
-  { key: "debts", label: "Debts" },
-  { key: "recurring", label: "Recurring" },
-  { key: "categories", label: "Categories" },
-];
+import { useI18n } from "@/lib/i18n/context";
 
 function MoneyContent() {
+  const { t } = useI18n();
+  const TABS = [
+    { key: "overview", label: t("moneyPage.overview") },
+    { key: "accounts", label: t("moneyPage.accounts") },
+    { key: "transactions", label: t("moneyPage.transactions") },
+    { key: "budgets", label: t("moneyPage.budgets") },
+    { key: "assets", label: t("moneyPage.assets") },
+    { key: "debts", label: t("moneyPage.debts") },
+    { key: "recurring", label: t("moneyPage.recurring") },
+    { key: "categories", label: t("moneyPage.categories") },
+  ];
   const active = useActiveTab(TABS);
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = () => setRefreshKey((k) => k + 1);
