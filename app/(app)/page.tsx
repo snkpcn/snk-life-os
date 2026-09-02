@@ -10,16 +10,9 @@ import { TodayPriorities } from "@/components/today-priorities";
 import { DailyNewsBrief } from "@/components/daily-news-brief";
 import { useI18n } from "@/lib/i18n/context";
 import { translateOption } from "@/lib/i18n";
+import { buildOccurrenceList, type ScheduleMaster, type ScheduleOccurrenceException, type ScheduleOccurrence } from "@/lib/schedule-occurrences";
 
 type Task = { id: string; title: string; status: string | null; priority: string | null; due_date?: string | null };
-type Event = {
-  id: string;
-  title: string;
-  start_time: string;
-  end_time: string | null;
-  category: string | null;
-  status: string | null;
-};
 type Project = { id: string; name: string; status: string | null; explicit_progress: number | null; priority: string | null };
 
 export default function TodayPage() {
@@ -27,7 +20,7 @@ export default function TodayPage() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [topTasks, setTopTasks] = useState<Task[]>([]);
   const [overdueTasks, setOverdueTasks] = useState<Task[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<ScheduleOccurrence[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [money, setMoney] = useState({ income: 0, expense: 0, totalAssets: 0, totalDebts: 0 });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -37,7 +30,7 @@ export default function TodayPage() {
     const { startISO, endISO, dateOnly } = todayRange();
     const monthStart = `${dateOnly.slice(0, 7)}-01`;
 
-    const [{ data: profile }, { data: top }, { data: ev }, { data: proj }, { data: monthTx }, { data: assets }, { data: debts }, { data: overdue }] =
+    const [{ data: profile }, { data: top }, { data: masters }, { data: proj }, { data: monthTx }, { data: assets }, { data: debts }, { data: overdue }] =
       await Promise.all([
         supabase.from("profiles").select("display_name").maybeSingle(),
         supabase
@@ -49,11 +42,9 @@ export default function TodayPage() {
           .limit(5),
         supabase
           .from("schedule_events")
-          .select("id, title, start_time, end_time, category, status")
+          .select("id, title, start_time, end_time, all_day, category, status, priority, location, notes, rrule")
           .is("archived_at", null)
-          .gte("start_time", startISO)
-          .lt("start_time", endISO)
-          .order("start_time", { ascending: true }),
+          .or(`rrule.not.is.null,and(start_time.gte.${startISO},start_time.lt.${endISO})`),
         supabase
           .from("projects")
           .select("id, name, status, explicit_progress, priority")
@@ -75,7 +66,20 @@ export default function TodayPage() {
 
     setDisplayName(profile?.display_name ?? null);
     setTopTasks(top || []);
-    setEvents(ev || []);
+
+    const masterList = (masters || []) as ScheduleMaster[];
+    const masterIds = masterList.map((m) => m.id);
+    let exceptionRows: ScheduleOccurrenceException[] = [];
+    if (masterIds.length > 0) {
+      const { data: exData } = await supabase
+        .from("schedule_event_occurrences")
+        .select("*")
+        .in("master_event_id", masterIds)
+        .gte("occurrence_date", startISO.slice(0, 10))
+        .lte("occurrence_date", dateOnly);
+      exceptionRows = (exData || []) as ScheduleOccurrenceException[];
+    }
+    setEvents(buildOccurrenceList(masterList, exceptionRows, new Date(startISO), new Date(endISO)));
     setProjects(proj || []);
     setOverdueTasks(overdue || []);
     const income = (monthTx || []).filter((x) => x.type === "income").reduce((s, x) => s + Number(x.amount), 0);
@@ -175,7 +179,7 @@ export default function TodayPage() {
       <Card>
         {events.length === 0 && <EmptyState label={t("today.nothingScheduled")} />}
         {events.map((e) => (
-          <div key={e.id} className="flex items-center justify-between border-b border-line py-3 last:border-0">
+          <div key={e.key} className="flex items-center justify-between border-b border-line py-3 last:border-0">
             <div>
               <b className="block text-sm">{e.title}</b>
               <small className="text-muted">{formatDateTime(e.start_time, locale)}</small>

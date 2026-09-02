@@ -1,12 +1,11 @@
 "use client";
 
-import { ResourceSection } from "@/components/resource-section";
-import { RESOURCES } from "@/lib/resources";
+import { ScheduleBoard } from "@/components/schedule-board";
 
 export default function SchedulePage() {
   return (
     <div>
-      <ResourceSection resource={RESOURCES.schedule_events} />
+      <ScheduleBoard />
     </div>
   );
 }
