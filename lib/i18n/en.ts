@@ -248,7 +248,7 @@ export const en = {
   goldFxPage: {
     indicativeLabel: "Indicative / Estimated",
     indicativeDisclaimer:
-      "Calculated from XAU/USD × USD/THB and standard weight conversion — not the official Gold Traders Association of Thailand price.",
+      "Calculated from the COMEX gold futures price × USD/THB and standard weight conversion — not the official Gold Traders Association of Thailand price.",
   },
   cryptoPage: {
     title: "Crypto",

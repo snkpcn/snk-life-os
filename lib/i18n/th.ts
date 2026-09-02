@@ -249,7 +249,7 @@ export const th: Dict = {
   },
   goldFxPage: {
     indicativeLabel: "ประมาณการ / Indicative",
-    indicativeDisclaimer: "คำนวณจาก XAU/USD × USD/THB และอัตราแปลงน้ำหนักมาตรฐาน — ไม่ใช่ราคาทองคำแท่งอย่างเป็นทางการจากสมาคมค้าทองคำ",
+    indicativeDisclaimer: "คำนวณจากราคาสัญญาซื้อขายล่วงหน้าทองคำ COMEX × USD/THB และอัตราแปลงน้ำหนักมาตรฐาน — ไม่ใช่ราคาทองคำแท่งอย่างเป็นทางการจากสมาคมค้าทองคำ",
   },
   cryptoPage: {
     title: "คริปโต",

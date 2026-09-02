@@ -43,8 +43,8 @@ function MarketsContent() {
         <div className="mt-4">
           <InstrumentPanel
             apiPath="/api/markets/gold"
-            fallbackSymbol="XAU/USD"
-            fallbackName="Gold Spot"
+            fallbackSymbol="GOLD"
+            fallbackName="Gold Futures (COMEX)"
             resourceMarketLabel="Gold"
             newsKeywords={["gold", "xau", "ทองคำ", "bullion"]}
             showThaiGoldIndicative

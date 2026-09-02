@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     : "";
 
   const instrumentAskBlock = instrumentAsk
-    ? `\n\nThe user is asking about this specific instrument (a commodity or FX rate, not a stock or crypto) — answer only from these known facts, never invent numbers, and if a Thai-baht-equivalent gold value is mentioned anywhere, always call it an indicative/estimated conversion, never the official Gold Traders Association of Thailand price:\n${instrumentAsk.name} (${instrumentAsk.symbol}): price ${instrumentAsk.price ?? "unknown"} ${instrumentAsk.currency}, change ${instrumentAsk.changePercent ?? "?"}%`
+    ? `\n\nThe user is asking about this specific instrument (a commodity or FX rate, not a stock or crypto) — answer only from these known facts, never invent numbers. If this is gold, its price is a COMEX futures price, not a literal LBMA spot fix — mention that distinction if relevant. If a Thai-baht-equivalent gold value is mentioned anywhere, always call it an indicative/estimated conversion, never the official Gold Traders Association of Thailand price:\n${instrumentAsk.name} (${instrumentAsk.symbol}): price ${instrumentAsk.price ?? "unknown"} ${instrumentAsk.currency}, change ${instrumentAsk.changePercent ?? "?"}%`
     : "";
 
   const anthropic = new Anthropic({ apiKey });

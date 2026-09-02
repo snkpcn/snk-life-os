@@ -1,10 +1,13 @@
-// Real Yahoo Finance symbols — not fabricated. "XAU=X" is Yahoo's spot gold (troy ounce, USD)
-// FX-style ticker (same base=X convention as THB=X below) — confirmed live against Yahoo's v8
-// chart endpoint; "XAUUSD=X" returns 404 "symbol may be delisted" and was wrong.
+// Real Yahoo Finance symbols — not fabricated. "GC=F" is Yahoo's COMEX gold futures ticker
+// (front-month), confirmed live against Yahoo's v8 chart endpoint returning a real price
+// (~$4383/oz at time of writing). Both "XAUUSD=X" and "XAU=X" 404 "symbol may be delisted" on
+// this endpoint and were wrong — do not reintroduce them without re-verifying live first.
+// Labeled "Gold Futures (COMEX)" rather than "Spot" since a futures price can differ slightly
+// from the LBMA spot fix — this is a real, honest distinction, not just caution for its own sake.
 // "THB=X" is Yahoo's convention for USD/THB (base USD, quote THB).
-export const GOLD_YAHOO_SYMBOL = "XAU=X";
-export const GOLD_DISPLAY_SYMBOL = "XAU/USD";
-export const GOLD_DISPLAY_NAME = "Gold Spot";
+export const GOLD_YAHOO_SYMBOL = "GC=F";
+export const GOLD_DISPLAY_SYMBOL = "GOLD";
+export const GOLD_DISPLAY_NAME = "Gold Futures (COMEX)";
 
 export const USDTHB_YAHOO_SYMBOL = "THB=X";
 export const USDTHB_DISPLAY_SYMBOL = "USD/THB";
@@ -13,7 +16,8 @@ export const USDTHB_DISPLAY_NAME = "US Dollar / Thai Baht";
 const TROY_OUNCE_GRAMS = 31.1034768;
 const THAI_BAHT_WEIGHT_GRAMS = 15.244;
 
-/** Indicative-only Thai gold price per baht-weight, derived from XAU/USD × USD/THB.
+/** Indicative-only Thai gold price per baht-weight, derived from the COMEX gold futures
+ * price (GC=F) × USD/THB.
  * This is NEVER the official Gold Traders Association of Thailand price (which reflects
  * local supply/demand, purity conventions, and a dealer markup this calculation has no way
  * to know) — it's a transparent unit conversion of two real market quotes, always labeled
