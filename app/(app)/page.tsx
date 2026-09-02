@@ -8,6 +8,7 @@ import { formatDateTime, formatMoney } from "@/lib/format";
 import { Card, SectionHead, EmptyState } from "@/components/ui";
 import { TodayPriorities } from "@/components/today-priorities";
 import { DailyNewsBrief } from "@/components/daily-news-brief";
+import { CryptoTodayWidget } from "@/components/crypto/crypto-today-widget";
 import { useI18n } from "@/lib/i18n/context";
 import { translateOption } from "@/lib/i18n";
 import { buildOccurrenceList, type ScheduleMaster, type ScheduleOccurrenceException, type ScheduleOccurrence } from "@/lib/schedule-occurrences";
@@ -207,6 +208,8 @@ export default function TodayPage() {
           </Card>
         ))}
       </div>
+
+      <CryptoTodayWidget />
 
       <SectionHead title={t("today.dailyNewsBrief")} action={<Link href="/news" className="text-xs text-gold">{t("today.viewAllNews")}</Link>} />
       <DailyNewsBrief />

@@ -1,6 +1,70 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (Phase 2 LAUNCHED to Production — see checkpoint below).
+Last verified: 2026-09-02 (Phase 3 — Crypto Markets — in Preview; Production still on Phase 2).
+
+## 🟡 PHASE 3 — CRYPTO MARKETS (2026-09-02, in progress on a feature branch)
+
+**Branch**: `claude/snk-life-os-crypto-markets`, created from Production commit `2ad6f244c03aca332aa1d50e1fa242f07d50949f` (the live Phase 2 checkpoint). Production is untouched during this phase.
+
+**What's built**: a new Crypto tab inside the existing Markets page (`Overview | Crypto` via the same
+`Tabs` pattern used elsewhere — existing Overview content untouched). Data comes from CoinGecko's free
+public API, fetched server-side only (`lib/crypto/coingecko.ts`, never exposes a key client-side, per-call
+timeout + cache, returns `[]`/`null` on failure rather than throwing — a failed asset never blocks
+others). New API routes: `/api/crypto/markets` (default 5 assets or `scope=top` for the top-100 scan
+used by movers/watch/pulse), `/api/crypto/global`, `/api/crypto/coin/[id]` (detail + chart for a
+range), `/api/crypto/search`.
+
+- **BTC/ETH quick cards + global stats** (total market cap, 24h change, BTC/ETH dominance), each with
+  source + last-updated.
+- **BTC Market Pulse** (`lib/crypto/signals.ts::computeBtcPulse`) — a transparent, scored state
+  (Strong/Positive/Neutral/Weak/Risk-Off) derived only from real 7d/24h momentum, volume/market-cap
+  ratio, and intraday volatility on the data already fetched — never a fabricated prediction, factors
+  are shown alongside the state.
+- **Coins to Watch / Interesting Now** (`computeCoinsToWatch`/`computeInterestingNow`) — rule-based only
+  (unusual volume vs. the scan's own median, large 24h/7d moves, outperforming BTC, volatility
+  expansion), restricted to market-cap rank ≤150 to keep it to liquid assets. Each hit shows its real
+  numeric reason, never an unexplained AI opinion. Empty state is honest ("nothing qualifies") rather
+  than forcing picks.
+- **Top Gainers / Losers / Most Active** — same liquidity filter.
+- **Search** (CoinGecko `/search`) — dynamic, not a hardcoded coin list.
+- **Coin detail sheet** (`components/crypto/crypto-detail-sheet.tsx`) — price, 24h/7d, market cap,
+  volume, rank, 24h high/low, a dependency-free inline SVG chart across 1D/5D/1M/3M/6M/1Y/5Y, source +
+  timestamp, and four real actions reusing the existing resource engine with prefill: Watch
+  (`watchlist_items`), Add Holding (`holdings`), Price Alert (`price_alerts`), Note (`notes_table`) —
+  crypto holdings/watchlist entries live in the same tables as everything else, Markets stays
+  research/monitoring and Portfolio stays ownership, per spec. Related News is a client-side keyword
+  match against the News module's business/markets categories, explicitly labeled "possible contributing
+  factor," never asserted as causal.
+- **Ask Stark about crypto**: both the coin detail sheet (per-asset mini chat) and the main Stark page
+  (two new suggested chips) work. `lib/stark-context.ts::buildCryptoContext()` fetches a live crypto
+  snapshot (default assets + top-100 scan + global) whenever a message looks crypto-related (keyword
+  match) or a specific asset is attached, and the system prompt explicitly labels KNOWN MARKET DATA vs.
+  CALCULATION (the watch-list signals) vs. INTERPRETATION (BTC pulse) vs. instructs Stark to say "missing
+  data" rather than invent numbers.
+- **Today integration, restrained as specified**: `components/crypto/crypto-today-widget.tsx` renders
+  nothing at all unless BTC moved ≥8% in 24h or an active crypto price alert's condition is currently
+  true (checked live on page view — this app has no background job runner, so alerts are evaluated
+  on-demand, never promised as push notifications, matching the explicit "don't promise infrastructure
+  that doesn't exist" rule).
+- **TH/EN**: full `cryptoPage` i18n namespace added to both dictionaries, plus `marketsPage.tabOverview`/`tabCrypto`.
+- **No fake data anywhere**: every numeric field renders "—"/"Unavailable" rather than a substitute value
+  when the provider doesn't return it; nothing is AI-generated except the two explicitly-labeled
+  AI/interpretation surfaces (BTC pulse framing text, and Stark's own prose), and even those are built
+  only from the real fetched numbers.
+
+**Not done / deliberately out of scope for this pass**: no separate "Thailand/US/Gold/FX/Commodities"
+tabs were built — the existing Overview tab's TradingView preset chips already cover Thai/US
+stocks/Gold/FX, and building five more distinct dedicated sections wasn't requested as clearly as Crypto
+and would have meant redesigning Markets, which was explicitly disallowed. Fear & Greed Index and
+24h-liquidation context were skipped (no verified reliable free source wired up this pass) rather than
+faked.
+
+**Verification status**: local `npm run build` and `tsc --noEmit` both pass. Live behavior against the
+real CoinGecko API (whether it actually returns data reliably from Vercel's servers, chart rendering,
+touch usability at the four iPhone widths, TH/EN crypto label fit) has **not** been checked yet — that
+happens once this deploys to Preview, exactly like every other module before it in this project.
+
+## ✅ PHASE 2 — STABLE PRODUCTION CHECKPOINT (2026-09-02, still what's live)
 
 ## 🚀 PHASE 2 — PRODUCTION LIVE (2026-09-02)
 
