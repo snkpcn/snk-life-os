@@ -1,7 +1,9 @@
 import type { AiProvider } from "./types";
 
 const ENV_VAR = "GEMINI_API_KEY";
-const DEFAULT_MODEL = "gemini-2.0-flash";
+// gemini-2.0-flash was retired — confirmed via a live 404 from Google's own API naming its
+// replacement. Override with GEMINI_MODEL if this one is retired too.
+const DEFAULT_MODEL = "gemini-3.6-flash";
 const MAX_TOKENS = 700;
 
 export const googleProvider: AiProvider = {
