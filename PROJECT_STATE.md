@@ -1,6 +1,88 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (Phase 3 — Crypto Markets — in Preview; Production still on Phase 2).
+Last verified: 2026-09-02 (Phase 4 — Stock Markets — in Preview, same feature branch as Phase 3; Production still on Phase 2).
+
+## 🟡 PHASE 4 — STOCK MARKETS EXPERIENCE (2026-09-02, in progress on the same feature branch as Phase 3)
+
+**Branch**: `claude/snk-life-os-crypto-markets` (continued — commit `6d1d487`, on top of Phase 3's `e508526`). Production is still on the Phase 2 checkpoint and untouched.
+
+**Root cause found and fixed**: the reported "ADVANC shows Apple Inc." bug was the free TradingView
+`widgetembed` iframe (`components/tradingview-widget.tsx`) silently falling back to its own default
+instrument whenever it can't resolve an exchange prefix its free/public data license doesn't cover
+(`SET:ADVANC` and the other four Thai `PRESETS` entries). Rather than patch the symbol string and hope,
+the entire Overview tab's primary chart/data surface was replaced with a self-built experience backed by
+real Yahoo Finance data end-to-end, so the header, chart, and table are always reading the same resolved
+quote object — there is no separate opaque widget that can silently drift to a different symbol.
+`lib/stocks/yahoo.ts` additionally guards this explicitly: `fetchQuotes`/`fetchChart` compare the symbol
+Yahoo actually returns against the one requested and drop the row entirely on any mismatch, rather than
+ever show a substituted instrument. `tradingview-widget.tsx` is left in the repo (unused, harmless) in
+case it's wanted elsewhere later — nothing imports it anymore.
+
+**What's built** (`lib/stocks/*`, `app/api/stocks/*`, `components/stocks/*`):
+- **Yahoo Finance provider** (`lib/stocks/yahoo.ts`) — server-side only, no client-exposed key, 8s
+  timeout, Next `fetch` revalidate caching, batch quotes (`fetchQuotes`) and per-symbol chart
+  (`fetchChart`, 1D/5D/1M/3M/6M/1Y/5Y). Thai symbols are queried with a `.BK` suffix internally; the
+  app's own symbols stay bare (`ADVANC`, not `ADVANC.BK`) everywhere else.
+- **SET50 and S&P 500 constituent lists** (`lib/stocks/set50.ts`, `lib/stocks/sp500.ts`) — real
+  company/ticker snapshots, explicitly documented in-file as a periodically-refreshed static membership
+  list (index rebalancing has no free live API and isn't what "no fake data" is about — the prices and
+  changes shown for every one of these tickers are always fetched live, never this list). SET50 has all
+  50 names; S&P 500 is a curated ~100-name set of the most liquid, widely-recognized large-caps across
+  sectors rather than a literal 500-row enumeration typed from memory — chosen because (a) a full 500-row
+  table isn't usable on a mobile screen anyway (the spec's own default view is 10-20 rows + View All) and
+  (b) it avoids the accuracy risk of hand-listing 500 tickers. **Documented trade-off, not hidden.**
+- **Transparent, rule-based signals** (`lib/stocks/signals.ts`) — `computeStockMovers` (liquidity-filtered
+  gainers/losers/most-active) and `computeStockSignals` (Unusual Volume / Strong Momentum / Weak Momentum
+  / High Volatility, each with its real number) — mirrors `lib/crypto/signals.ts` exactly, and per the
+  explicit anti-requirement, **never** renders a BUY/SELL/STRONG BUY label anywhere, including in Stark's
+  system prompt instructions.
+- **New routes**: `/api/stocks/quotes?market=TH|US` (batch quotes for that market's full constituent
+  list, powers the table), `/api/stocks/chart?symbol=&market=&range=` (chart + the single resolved quote
+  for the header, with the mismatch guard above).
+- **`components/stocks/stock-header.tsx`** — symbol, company name, price, change/change%, market status
+  (open/pre/post/closed, from Yahoo's `marketState`), source + last-updated, all currency-aware (THB vs
+  USD via `Intl.NumberFormat`).
+- **`components/stocks/stock-market-dashboard.tsx`** — the rebuilt Overview tab content: Thailand/US
+  market switch (resets selection to that market's first constituent on switch, never carries a stale
+  symbol across markets) → stock header → compact 240px chart (reused `CryptoChart`, the same
+  dependency-free inline-SVG component from Phase 3 — no new chart library, no drawing tools/indicator
+  toolbar since it's a plain line/area chart) with only the 7 range chips → Watch/Add
+  Holding/Price Alert/Note quick actions (existing resource engine, `prefill` prop, same pattern as
+  Crypto — `market` field set to `"SET"` for Thai holdings or the real exchange name for US ones) →
+  `components/stocks/stock-table.tsx` (search, sort by symbol/price/change, quick filter chips
+  All/Gainers/Losers/Most Active, 12 rows by default with "View All" to expand — all client-side over the
+  already-fetched market list, tapping a row updates the header/chart above rather than navigating away)
+  → Market News → per-stock Related News → Ask Stark.
+- **News reuse, not a new system**: Market News and Related News fetch the *existing*
+  `/api/news?category=` route (Thailand market prioritizes `thailand,business,markets`; US prioritizes
+  `markets,business,tech`) and render with the *existing* `NewsCard`/`NewsArticleSheet` components — same
+  Read Summary/Open Original/Ask Stark-about-story/Save actions as the News page itself, same
+  `saved_news` save state (`/api/news/saved`). Nothing news-related was reimplemented.
+- **Stark**: `lib/stark-context.ts::buildStockContext(market)` mirrors `buildCryptoContext()`'s
+  known-data/calculation split (no separate "interpretation" layer for stocks, since there's no BTC-pulse
+  equivalent requested); `app/api/stark/route.ts` adds `wantsStocks` keyword/attached-context detection
+  (EN+TH) alongside the existing `wantsCrypto` check, and the system prompt now explicitly instructs
+  Stark to never use BUY/SELL/STRONG BUY phrasing for either asset class.
+- **TH/EN**: full `stocksPage` namespace added to both dictionaries (~45 keys).
+- **Crypto tab and `lib/crypto/*`/`components/crypto/*` untouched** — verified by diff scope: this
+  commit only adds `lib/stocks`, `app/api/stocks`, `components/stocks`, edits `markets/page.tsx` (Overview
+  tab body only, Crypto tab branch unchanged), `stark-context.ts`/`stark/route.ts` (additive), and the two
+  i18n dictionaries (additive).
+
+**Not done / deliberately out of scope for this pass**: true pagination/virtualization for "View All" on
+S&P 500 wasn't needed since the curated list tops out around 100 rows (renders fine as a plain scrollable
+table, no windowing library added); a global "search any stock beyond the two constituent lists" was not
+built (the spec's search requirement was scoped to *within* SET50/S&P500, not an open-ended symbol
+lookup like Crypto's).
+
+**Verification status**: local `npx tsc --noEmit` and `npm run build` both pass clean. Live behavior
+against Yahoo Finance's actual endpoints (whether the unofficial `query1.finance.yahoo.com` API responds
+reliably from Vercel's servers, real ADVANC/CPALL/AOT/KBANK/PTT and AAPL/MSFT/NVDA/GOOGL/AMZN quotes,
+chart rendering at each range, touch usability at the four iPhone widths, TH/EN label fit in the compact
+table) has **not** been checked yet — this is a new, previously-untested data source for this project
+(unlike CoinGecko, which Phase 3 already proved works from this deployment), so Preview QA on this pass
+matters more than usual. Push triggered a git-linked Vercel Preview build automatically per the standing
+deploy method; see the deployment ID recorded in the chat reply for this session.
 
 ## 🟡 PHASE 3 — CRYPTO MARKETS (2026-09-02, in progress on a feature branch)
 
