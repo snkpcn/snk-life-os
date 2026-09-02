@@ -9,10 +9,23 @@ below. The former "HOTFIX" section further down is now superseded/merged; kept a
 fix real failures, ship, document, stop — no new features, no redesign.**
 
 - **Production URL**: https://snk-life-os-final-stable2.vercel.app
-- **Final Production commit**: `bea471689faff14723cb57ce3b3c3bf264cee7aa` on `main`
-- **Release tag**: `snk-life-os-production-v1`
-- **Production deployment**: `dpl_AJnEmy5ygRuFAssVRmjKT4UHGFkU`, `target=production`, `READY`,
+- **Final Production commit**: `d8884cff43e32fd303c79414419c839c4475af69` on `main` (docs-only on
+  top of the functional release commit `bea471689faff14723cb57ce3b3c3bf264cee7aa` — same code)
+- **Release tag**: attempted (`snk-life-os-production-v1`) but `git push` of the tag failed
+  with HTTP 403 (permission scope on this session's git credential); the commit SHA above is
+  the durable reference until a tag can be pushed with broader credentials
+- **Production deployment**: `dpl_5K9EVpMBFGXDZLmv5ExpeF8aYCGp`, `target=production`, `READY`,
   aliased to the canonical domain, zero runtime errors
+
+### Final ship confirmation (2026-09-02, same day, second pass)
+
+Re-confirmed with no code changes needed: working tree clean and pushed, `tsc --noEmit` +
+`npm run build` clean on this exact commit, Production deployment already live at this commit
+(no redeploy needed — it was already the promoted candidate), zero runtime errors. Concise
+smoke test against the live Production domain — `/`, `/tasks`, `/schedule`, `/money`,
+`/markets`, `/news`, `/backup` — all seven correctly redirect an unauthenticated request to
+`/login` (confirms deployed, healthy, still correctly private). No regression found; nothing
+to fix.
 - **Supabase project**: `snk-life-os-private` (unchanged, not touched this pass)
 - **GitHub**: `snkpcn/snk-life-os`, `main` branch
 
