@@ -4,13 +4,14 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+const MAGIC_LINK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_MAGIC_LINK === "true";
+
 function LoginForm() {
   const params = useSearchParams();
   const next = params.get("next") || "/";
   const [mode, setMode] = useState<"password" | "magic">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,16 +22,10 @@ function LoginForm() {
     setError(null);
     setMessage(null);
     const supabase = createClient();
-    const { error } = isSignUp
-      ? await supabase.auth.signUp({ email, password })
-      : await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) {
       setError(error.message);
-      return;
-    }
-    if (isSignUp) {
-      setMessage("Account created. Check your email to confirm, then sign in.");
       return;
     }
     window.location.href = next;
@@ -62,28 +57,33 @@ function LoginForm() {
         </div>
         <h1 className="mb-6 text-2xl font-extrabold tracking-tight">SNK LIFE OS</h1>
 
-        <div className="mb-5 flex gap-2 rounded-xl bg-bg p-1">
-          <button
-            type="button"
-            onClick={() => setMode("password")}
-            className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
-              mode === "password" ? "bg-panel2 text-ink" : "text-muted"
-            }`}
-          >
-            Password
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("magic")}
-            className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
-              mode === "magic" ? "bg-panel2 text-ink" : "text-muted"
-            }`}
-          >
-            Magic Link
-          </button>
-        </div>
+        {MAGIC_LINK_ENABLED && (
+          <div className="mb-5 flex gap-2 rounded-xl bg-bg p-1">
+            <button
+              type="button"
+              onClick={() => setMode("password")}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                mode === "password" ? "bg-panel2 text-ink" : "text-muted"
+              }`}
+            >
+              Password
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("magic")}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                mode === "magic" ? "bg-panel2 text-ink" : "text-muted"
+              }`}
+            >
+              Magic Link
+            </button>
+          </div>
+        )}
 
-        <form onSubmit={mode === "password" ? handlePasswordAuth : handleMagicLink} className="space-y-3">
+        <form
+          onSubmit={mode === "magic" && MAGIC_LINK_ENABLED ? handleMagicLink : handlePasswordAuth}
+          className="space-y-3"
+        >
           <div>
             <label className="mb-1 block text-[11px] text-muted">Email</label>
             <input
@@ -96,7 +96,7 @@ function LoginForm() {
             />
           </div>
 
-          {mode === "password" && (
+          {(mode === "password" || !MAGIC_LINK_ENABLED) && (
             <div>
               <label className="mb-1 block text-[11px] text-muted">Password</label>
               <input
@@ -121,25 +121,9 @@ function LoginForm() {
             type="submit"
             className="h-12 w-full rounded-xl bg-gradient-to-br from-gold to-goldDark font-bold text-[#17130c] disabled:opacity-60"
           >
-            {busy
-              ? "Please wait…"
-              : mode === "magic"
-                ? "Send magic link"
-                : isSignUp
-                  ? "Create account"
-                  : "Sign in"}
+            {busy ? "Please wait…" : mode === "magic" && MAGIC_LINK_ENABLED ? "Send magic link" : "Sign in"}
           </button>
         </form>
-
-        {mode === "password" && (
-          <button
-            type="button"
-            onClick={() => setIsSignUp((v) => !v)}
-            className="mt-4 w-full text-center text-xs text-muted underline underline-offset-2"
-          >
-            {isSignUp ? "Already have an account? Sign in" : "New here? Create an account"}
-          </button>
-        )}
       </div>
     </div>
   );
