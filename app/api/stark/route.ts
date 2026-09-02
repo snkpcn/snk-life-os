@@ -1,21 +1,32 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
-import { buildStarkContext, buildCryptoContext, buildStockContext, languageInstruction } from "@/lib/stark-context";
+import { buildTodayContext, buildTasksContext, buildMoneyContext, buildProjectsGoalsContext, buildCryptoContext, buildStockContext, languageInstruction } from "@/lib/stark-context";
+import { getConfiguredProvider, SUPPORTED_PROVIDERS, type ChatMessage } from "@/lib/ai";
 import type { StockMarket } from "@/lib/stocks/types";
 
 export const dynamic = "force-dynamic";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
 type ArticleContext = { headline: string; source: string; summary: string; published_at: string | null; article_url: string };
 type CryptoAskContext = { id: string; symbol: string; name: string; price: number | null; change24h: number | null; change7d: number | null; marketCap: number | null; marketCapRank: number | null };
 type StockAskContext = { symbol: string; name: string; market: StockMarket; price: number | null; changePercent: number | null; currency: string };
+type InstrumentAskContext = { symbol: string; name: string; price: number | null; changePercent: number | null; currency: string };
 
+// Stark is not hard-dependent on any single AI provider — it works with whichever one (if
+// any) has its env var set, in the priority order defined in lib/ai/index.ts. This message
+// lists every currently supported option so a missing key is actionable, not a dead end.
 function notConnectedMessage(locale: string | undefined) {
+  const options = SUPPORTED_PROVIDERS.map((p) => `${p.label} → ${p.envVar}`).join(", ");
   if (locale === "th") {
-    return "สตาร์กยังไม่ได้เชื่อมต่อ — ยังไม่ได้ตั้งค่าตัวแปรสภาพแวดล้อม ANTHROPIC_API_KEY บนดีพลอยนี้ กรุณาเพิ่มในการตั้งค่าโปรเจกต์ของ Vercel แล้วผมจะตอบจากข้อมูลจริงของคุณได้";
+    return `สตาร์กยังไม่ได้เชื่อมต่อ — ยังไม่ได้ตั้งค่าคีย์ผู้ให้บริการ AI บนดีพลอยนี้ กรุณาตั้งค่าตัวแปรสภาพแวดล้อมของผู้ให้บริการใดผู้ให้บริการหนึ่งต่อไปนี้ใน Vercel: ${options} แล้วผมจะตอบจากข้อมูลจริงของคุณได้`;
   }
-  return "Stark isn't connected yet — the ANTHROPIC_API_KEY environment variable hasn't been set on this deployment. Add it in Vercel project settings, then I'll answer from your live data.";
+  return `Stark isn't connected yet — no AI provider API key is configured on this deployment. Set one of these environment variables in Vercel project settings: ${options}. Then I'll answer from your live data.`;
+}
+
+function providerErrorMessage(locale: string | undefined, providerLabel: string) {
+  if (locale === "th") {
+    return `เกิดข้อผิดพลาดขณะติดต่อผู้ให้บริการ AI (${providerLabel}) กรุณาลองใหม่อีกครั้ง หรือตรวจสอบคีย์ API ในการตั้งค่า Vercel`;
+  }
+  return `There was a problem reaching the AI provider (${providerLabel}). Please try again, or check its API key in Vercel settings.`;
 }
 
 export async function POST(request: Request) {
@@ -28,8 +39,8 @@ export async function POST(request: Request) {
   const body = await request.json();
   const locale: string | undefined = body.locale === "th" ? "th" : "en";
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const provider = getConfiguredProvider();
+  if (!provider) {
     return NextResponse.json({ reply: notConnectedMessage(locale) });
   }
 
@@ -38,6 +49,7 @@ export async function POST(request: Request) {
   const article: ArticleContext | undefined = body.article;
   const cryptoAsk: CryptoAskContext | undefined = body.crypto;
   const stockAsk: StockAskContext | undefined = body.stock;
+  const instrumentAsk: InstrumentAskContext | undefined = body.instrument;
 
   const wantsCrypto =
     Boolean(cryptoAsk) ||
@@ -49,8 +61,22 @@ export async function POST(request: Request) {
     /stock|share|equity|set50|s&p|nasdaq|nyse|หุ้น|ตลาดหลักทรัพย์/i.test(message) ||
     history.some((m) => /stock|share|equity|set50|s&p|nasdaq|nyse|หุ้น|ตลาดหลักทรัพย์/i.test(m.content));
 
-  const [context, cryptoContext, stockContext] = await Promise.all([
-    buildStarkContext(supabase),
+  const wantsTasks = /\btask|todo|to-do|overdue|งาน|ค้าง/i.test(message);
+  const wantsMoney = /money|expense|income|budget|debt|asset|spending|เงิน|รายจ่าย|รายรับ|งบ|หนี้/i.test(message);
+  const wantsProjects = /project|goal|โปรเจกต์|เป้าหมาย/i.test(message);
+
+  // A clearly-topical question (crypto/stocks/tasks/money/projects) sends only that topic's
+  // context plus the always-on Today baseline, instead of the full daily snapshot on every
+  // request — keeps token spend down and matches what was actually asked. A fully generic
+  // question (none of the above matched) falls back to the broader picture, since "how am I
+  // doing" genuinely needs it.
+  const isTopical = wantsCrypto || wantsStocks || wantsTasks || wantsMoney || wantsProjects;
+
+  const [context, tasksContext, moneyContext, projectsGoalsContext, cryptoContext, stockContext] = await Promise.all([
+    buildTodayContext(supabase),
+    wantsTasks || !isTopical ? buildTasksContext(supabase) : Promise.resolve(""),
+    wantsMoney || !isTopical ? buildMoneyContext(supabase) : Promise.resolve(""),
+    wantsProjects || !isTopical ? buildProjectsGoalsContext(supabase) : Promise.resolve(""),
     wantsCrypto ? buildCryptoContext() : Promise.resolve(""),
     wantsStocks ? buildStockContext(stockAsk?.market || "TH") : Promise.resolve(""),
   ]);
@@ -67,16 +93,22 @@ export async function POST(request: Request) {
     ? `\n\nThe user is asking about this specific stock — answer only from the STOCK MARKET context above plus these known facts, never invent numbers:\n${stockAsk.name} (${stockAsk.symbol}, ${stockAsk.market === "TH" ? "SET" : "US"}): price ${stockAsk.price ?? "unknown"} ${stockAsk.currency}, change ${stockAsk.changePercent ?? "?"}%`
     : "";
 
-  const anthropic = new Anthropic({ apiKey });
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 700,
-    system: `You are Stark, the executive chief-of-staff inside SNK LIFE OS. Answer only from the live data snapshot provided below — never invent numbers. If something isn't in the snapshot, say it's not tracked yet and suggest where to add it. Be direct, concise, and action-oriented. Never use labels like BUY/SELL/STRONG BUY for stocks or crypto — describe momentum, volume, and volatility factually instead. ${languageInstruction(locale)}\n\n${context}${cryptoContext ? `\n\n${cryptoContext}` : ""}${stockContext ? `\n\n${stockContext}` : ""}${articleBlock}${cryptoAskBlock}${stockAskBlock}`,
-    messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user" as const, content: message }],
-  });
+  const instrumentAskBlock = instrumentAsk
+    ? `\n\nThe user is asking about this specific instrument (a commodity or FX rate, not a stock or crypto) — answer only from these known facts, never invent numbers. If this is gold, its price is a COMEX futures price, not a literal LBMA spot fix — mention that distinction if relevant. If a Thai-baht-equivalent gold value is mentioned anywhere, always call it an indicative/estimated conversion, never the official Gold Traders Association of Thailand price:\n${instrumentAsk.name} (${instrumentAsk.symbol}): price ${instrumentAsk.price ?? "unknown"} ${instrumentAsk.currency}, change ${instrumentAsk.changePercent ?? "?"}%`
+    : "";
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  const reply = textBlock && "text" in textBlock ? textBlock.text : "…";
+  const snapshotBlock = [context, tasksContext, moneyContext, projectsGoalsContext].filter(Boolean).join("\n");
 
-  return NextResponse.json({ reply });
+  const systemPrompt = `You are Stark, the executive chief-of-staff inside SNK LIFE OS. Answer only from the live data snapshot provided below — never invent numbers. If something isn't in the snapshot, say it's not tracked yet and suggest where to add it (this may mean it genuinely isn't tracked, or just that this answer only pulled in the topics relevant to the question — say so rather than guessing). Be direct, concise, and action-oriented. Never use labels like BUY/SELL/STRONG BUY for stocks or crypto — describe momentum, volume, and volatility factually instead. ${languageInstruction(locale)}\n\nLive SNK LIFE OS data snapshot:\n${snapshotBlock}${cryptoContext ? `\n\n${cryptoContext}` : ""}${stockContext ? `\n\n${stockContext}` : ""}${articleBlock}${cryptoAskBlock}${stockAskBlock}${instrumentAskBlock}`;
+  const conversation: ChatMessage[] = [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: message }];
+
+  let reply: string;
+  try {
+    reply = await provider.chat(systemPrompt, conversation);
+  } catch (err) {
+    console.error(`Stark AI provider error (${provider.id}):`, err);
+    return NextResponse.json({ reply: providerErrorMessage(locale, provider.label) });
+  }
+
+  return NextResponse.json({ reply: reply || "…" });
 }

@@ -7,12 +7,15 @@ import { ResourceSection } from "@/components/resource-section";
 import { RESOURCES } from "@/lib/resources";
 import { CryptoDashboard } from "@/components/crypto/crypto-dashboard";
 import { StockMarketDashboard } from "@/components/stocks/stock-market-dashboard";
+import { InstrumentPanel } from "@/components/markets/instrument-panel";
 import { useI18n } from "@/lib/i18n/context";
 
 function MarketsContent() {
   const { t } = useI18n();
   const TABS = [
     { key: "overview", label: t("marketsPage.tabOverview") },
+    { key: "gold", label: t("marketsPage.tabGold") },
+    { key: "fx", label: t("marketsPage.tabFx") },
     { key: "crypto", label: t("marketsPage.tabCrypto") },
   ];
   const active = useActiveTab(TABS);
@@ -33,6 +36,31 @@ function MarketsContent() {
 
           <SectionHead title={t("marketsPage.priceAlerts")} />
           <ResourceSection resource={RESOURCES.price_alerts} hideCreate={false} />
+        </div>
+      )}
+
+      {active === "gold" && (
+        <div className="mt-4">
+          <InstrumentPanel
+            apiPath="/api/markets/gold"
+            fallbackSymbol="GOLD"
+            fallbackName="Gold Futures (COMEX)"
+            resourceMarketLabel="Gold"
+            newsKeywords={["gold", "xau", "ทองคำ", "bullion"]}
+            showThaiGoldIndicative
+          />
+        </div>
+      )}
+
+      {active === "fx" && (
+        <div className="mt-4">
+          <InstrumentPanel
+            apiPath="/api/markets/fx"
+            fallbackSymbol="USD/THB"
+            fallbackName="US Dollar / Thai Baht"
+            resourceMarketLabel="FX"
+            newsKeywords={["baht", "usd/thb", "บาท", "อัตราแลกเปลี่ยน", "exchange rate"]}
+          />
         </div>
       )}
 

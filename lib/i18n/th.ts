@@ -243,7 +243,13 @@ export const th: Dict = {
     subtitle: "หุ้นไทย · หุ้นสหรัฐ · ทองคำ · USD/THB",
     priceAlerts: "การแจ้งเตือนราคา",
     tabOverview: "ภาพรวม",
+    tabGold: "ทองคำ",
+    tabFx: "อัตราแลกเปลี่ยน",
     tabCrypto: "คริปโต",
+  },
+  goldFxPage: {
+    indicativeLabel: "ประมาณการ / Indicative",
+    indicativeDisclaimer: "คำนวณจากราคาสัญญาซื้อขายล่วงหน้าทองคำ COMEX × USD/THB และอัตราแปลงน้ำหนักมาตรฐาน — ไม่ใช่ราคาทองคำแท่งอย่างเป็นทางการจากสมาคมค้าทองคำ",
   },
   cryptoPage: {
     title: "คริปโต",
