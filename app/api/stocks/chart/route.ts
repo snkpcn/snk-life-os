@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchChart, fetchQuote } from "@/lib/stocks/yahoo";
+import { fetchChart, fetchDetailQuote } from "@/lib/stocks/yahoo";
 import type { StockChartRange, StockMarket } from "@/lib/stocks/types";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
   if (!symbol) return NextResponse.json({ error: "symbol is required" }, { status: 400 });
 
-  const [quote, chart] = await Promise.all([fetchQuote(symbol, market), fetchChart(symbol, market, range)]);
+  const [quote, chart] = await Promise.all([fetchDetailQuote(symbol, market), fetchChart(symbol, market, range)]);
 
   return NextResponse.json({ quote, chart, range, fetched_at: new Date().toISOString() });
 }

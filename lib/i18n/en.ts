@@ -353,6 +353,7 @@ export const en = {
     note: "Note",
     marketNews: "Market News",
     noNews: "No market news available right now.",
+    marketDataUnavailable: "Market data temporarily unavailable.",
     relatedNews: "News related to {symbol}",
     askStark: "Ask Stark",
     starkPlaceholderEn: "Ask about this stock or the market…",

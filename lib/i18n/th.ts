@@ -355,6 +355,7 @@ export const th: Dict = {
     note: "โน้ต",
     marketNews: "ข่าวตลาด",
     noNews: "ยังไม่มีข่าวตลาดในขณะนี้",
+    marketDataUnavailable: "ขณะนี้ไม่สามารถแสดงข้อมูลตลาดได้ชั่วคราว",
     relatedNews: "ข่าวที่เกี่ยวข้องกับ {symbol}",
     askStark: "ถามสตาร์ก",
     starkPlaceholderEn: "Ask about this stock or the market…",

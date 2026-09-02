@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { formatStockPrice, formatPercent, percentColorClass } from "@/lib/stocks/format";
 import { computeStockMovers } from "@/lib/stocks/signals";
@@ -17,12 +17,20 @@ export function StockTable({
   selectedSymbol,
   onSelect,
   loading,
+  quotesUnavailable,
+  onVisibleSymbolsChange,
 }: {
   constituents: ConstituentMeta[];
   quotes: StockQuote[];
   selectedSymbol: string;
   onSelect: (symbol: string) => void;
   loading: boolean;
+  /** True when the last quote fetch for the currently-needed symbols failed outright — used to
+   * show an honest "data unavailable" message instead of a misleading "no matches" empty state. */
+  quotesUnavailable: boolean;
+  /** Fires whenever the set of rows actually on screen changes, so the parent can fetch quotes
+   * for exactly those symbols instead of the whole constituent list up front. */
+  onVisibleSymbolsChange: (symbols: string[]) => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
@@ -56,6 +64,17 @@ export function StockTable({
   }, [constituents, bySymbol, filterSet, query, sortKey]);
 
   const visible = showAll ? rows : rows.slice(0, DEFAULT_VISIBLE);
+  const visibleSymbolsKey = visible.map((r) => r.meta.symbol).join(",");
+
+  useEffect(() => {
+    if (visibleSymbolsKey) onVisibleSymbolsChange(visibleSymbolsKey.split(","));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSymbolsKey]);
+
+  // Only treat a filtered result as genuinely empty when real quote data was actually available
+  // to filter on — otherwise "no gainers" and "data hasn't loaded" would show the same message.
+  const hasAnyQuoteData = quotes.some((q) => q.price !== null);
+  const emptyIsDataFailure = quotesUnavailable || (filter !== "all" && !hasAnyQuoteData);
 
   const FILTERS: { key: FilterKey; label: string }[] = [
     { key: "all", label: t("stocksPage.filterAll") },
@@ -111,7 +130,7 @@ export function StockTable({
             {visible.length === 0 && (
               <tr>
                 <td colSpan={3} className="px-3 py-6 text-center text-xs text-muted">
-                  {loading ? t("common.loading") : t("stocksPage.noResults")}
+                  {loading ? t("common.loading") : emptyIsDataFailure ? t("stocksPage.marketDataUnavailable") : t("stocksPage.noResults")}
                 </td>
               </tr>
             )}
