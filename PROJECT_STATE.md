@@ -54,9 +54,10 @@ if anything in a future feature branch goes wrong.
   3. User action still outstanding (see "Still needs your action" below): turn off "Allow new users to
      sign up" in the Supabase dashboard; set `ANTHROPIC_API_KEY` as a Vercel env var for Stark to work
      for real.
-- **New working branch**: to be created from this exact commit (`35d0c4a`) for the i18n/News feature
-  phase — see the bottom of this file for its name once created. Production must not be modified
-  directly while that phase is in progress; all of that work happens on the new branch only.
+- **New working branch**: `claude/snk-life-os-i18n-news`, branched from `94f6a69` (this checkpoint
+  commit on `claude/snk-life-os-audit-u77d7n`, which is `35d0c4a` plus this PROJECT_STATE.md update) and
+  pushed to `origin/claude/snk-life-os-i18n-news`. This is where the i18n/News feature phase happens.
+  Production must not be modified directly while that phase is in progress.
 
 ## Canonical infrastructure
 
