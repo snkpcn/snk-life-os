@@ -12,7 +12,7 @@ export default function StarkPage() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const chips = [t("starkPage.chip1"), t("starkPage.chip2"), t("starkPage.chip3"), t("starkPage.chip4")];
+  const chips = [t("starkPage.chip1"), t("starkPage.chip2"), t("starkPage.chip3"), t("starkPage.chip4"), t("cryptoPage.starkChip1"), t("cryptoPage.starkChip2")];
 
   async function send(text: string) {
     const trimmed = text.trim();

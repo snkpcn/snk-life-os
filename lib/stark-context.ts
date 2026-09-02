@@ -1,5 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { todayRange } from "@/lib/date-range";
+import { fetchMarketsByIds, fetchTopMarkets, fetchGlobal, DEFAULT_COIN_IDS } from "@/lib/crypto/coingecko";
+import { computeBtcPulse, computeCoinsToWatch } from "@/lib/crypto/signals";
+import { fetchQuotes } from "@/lib/stocks/yahoo";
+import { SET50 } from "@/lib/stocks/set50";
+import { SP500 } from "@/lib/stocks/sp500";
+import { computeStockSignals } from "@/lib/stocks/signals";
+import type { StockMarket } from "@/lib/stocks/types";
 
 export async function buildStarkContext(supabase: ReturnType<typeof createClient>) {
   const { startISO, endISO, dateOnly } = todayRange();
@@ -56,6 +63,75 @@ ACTIVE PROJECTS: ${(projects || [])
     .join(" | ") || "none"}
 GOALS: ${(goals || []).map((g) => `${g.title} [${g.status}] ${g.current_value ?? "?"}/${g.target_value ?? "?"} ${g.unit || ""}`).join("; ") || "none"}
 MONEY (this month): income ${income}, expense ${expense}. Total assets ${totalAssets}, total debts ${totalDebts}, net worth ${totalAssets - totalDebts}.`;
+}
+
+/** Live crypto snapshot for Stark, clearly separating fetched facts, derived calculations, and the one
+ * labeled interpretation (BTC pulse) — never fabricated, degrades to "no data" per-asset on provider failure. */
+export async function buildCryptoContext(): Promise<string> {
+  const [defaults, top, global] = await Promise.all([fetchMarketsByIds(DEFAULT_COIN_IDS), fetchTopMarkets(100), fetchGlobal()]);
+
+  if (defaults.length === 0 && top.length === 0) {
+    return "CRYPTO DATA: currently unavailable from the market data provider — say so plainly if asked, do not invent any crypto numbers.";
+  }
+
+  const btc = defaults.find((a) => a.symbol === "BTC") || null;
+  const pulse = computeBtcPulse(btc);
+  const watchList = top.length > 0 ? computeCoinsToWatch(top, btc?.change7d ?? null).slice(0, 5) : [];
+
+  const knownData = defaults
+    .map((a) => `${a.name} (${a.symbol}): $${a.price ?? "unknown"}, 24h ${a.change24h ?? "?"}%, 7d ${a.change7d ?? "?"}%, market cap $${a.marketCap ?? "?"}, rank #${a.marketCapRank ?? "?"}`)
+    .join("\n");
+
+  const globalLine = global
+    ? `Total crypto market cap $${global.totalMarketCap ?? "?"} (24h ${global.totalMarketCapChange24h ?? "?"}%), BTC dominance ${global.btcDominance ?? "?"}%, ETH dominance ${global.ethDominance ?? "?"}%.`
+    : "Global market stats unavailable.";
+
+  const calc =
+    watchList.length > 0
+      ? watchList.map((s) => `${s.asset.symbol}: ${s.reasons.map((r) => `${r.key}=${r.value}`).join(", ")}`).join("\n")
+      : "No coins currently meet the watch-list thresholds.";
+
+  return `CRYPTO — KNOWN MARKET DATA (source: CoinGecko, fetched just now):
+${knownData}
+${globalLine}
+
+CRYPTO — CALCULATION (rule-based "coins to watch" signals derived from the data above — unusual volume, strong 24h/7d moves, outperforming BTC, volatility; NOT an AI opinion):
+${calc}
+
+CRYPTO — INTERPRETATION (BTC Market Pulse — an analytical label derived from the momentum/volume/volatility numbers above, NOT a buy/sell recommendation): ${pulse.state.toUpperCase()} (factors: ${pulse.factors.join(", ") || "none"})
+
+When answering crypto questions, clearly distinguish which of these three categories (known data / calculation / interpretation) your answer draws from, and say "missing data" for anything not covered above rather than inventing a number.`;
+}
+
+/** Live stock-market snapshot for Stark (SET50 or S&P 500, whichever market the user has
+ * selected on the Stocks tab), same known-data/calculation split as crypto — never a
+ * BUY/SELL recommendation, only descriptive signals with their real numbers. */
+export async function buildStockContext(market: StockMarket): Promise<string> {
+  const constituents = market === "TH" ? SET50 : SP500;
+  const quotes = await fetchQuotes(constituents.map((c) => c.symbol), market);
+
+  if (quotes.length === 0) {
+    return `STOCK DATA (${market === "TH" ? "SET50" : "S&P 500"}): currently unavailable from the market data provider — say so plainly if asked, do not invent any stock prices.`;
+  }
+
+  const signals = computeStockSignals(quotes).slice(0, 8);
+  const knownData = quotes
+    .slice(0, 20)
+    .map((q) => `${q.name} (${q.symbol}): ${q.price ?? "unknown"} ${q.currency}, change ${q.changePercent ?? "?"}%, volume ${q.volume ?? "?"}`)
+    .join("\n");
+
+  const calc =
+    signals.length > 0
+      ? signals.map((s) => `${s.quote.symbol}: ${s.reasons.map((r) => `${r.key}=${r.value}`).join(", ")}`).join("\n")
+      : "No stocks currently meet the signal thresholds.";
+
+  return `STOCK MARKET — ${market === "TH" ? "SET50 (Thailand)" : "S&P 500 (United States)"} — KNOWN DATA (source: Yahoo Finance, fetched just now):
+${knownData}
+
+STOCK MARKET — CALCULATION (rule-based descriptive signals derived from the data above — unusual volume, strong or weak momentum, high volatility; NOT a buy/sell recommendation and NEVER phrase these as BUY/SELL/STRONG BUY):
+${calc}
+
+When answering stock questions, clearly say which of these two categories (known data / calculation) your answer draws from, and say "missing data" for anything not covered above rather than inventing a price.`;
 }
 
 export function languageInstruction(locale: string | undefined) {
