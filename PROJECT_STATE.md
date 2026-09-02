@@ -1,8 +1,48 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (production promotion + verification performed live against Vercel APIs).
+Last verified: 2026-09-02 (Phase 2 production promotion in progress — see checkpoint below).
 
-## 🟡 PHASE 2 CHECKPOINT — code complete and pushed, Preview deployment NOT yet done (2026-09-02)
+## ✅ PHASE 2 — STABLE PRODUCTION CHECKPOINT (2026-09-02)
+
+**Final verified commit**: `7e98923c560a75f3ec1cf5dbefd2f7b0221ba9b2` on branch
+`claude/snk-life-os-i18n-news`, pushed to `origin/claude/snk-life-os-i18n-news`. Working tree clean,
+local build re-verified green (`npm run build`, exit 0) immediately before this promotion.
+
+**How Preview deployment got solved this session** (worth keeping — it's now the standing deploy method):
+`mcp__Vercel__deploy_to_vercel`'s single-call full-file-tree payload (~317KB for this app) reliably
+exceeds a hard per-turn output ceiling in this harness, confirmed identically across the main session and
+a dedicated subagent — not fixable by formatting/retrying/delegating. The fix: the existing Vercel
+project `snk-life-os-final-stable2` is now **git-linked** to `snkpcn/snk-life-os` (Project Settings → Git,
+done via the dashboard by the user), with **Production Branch = `main`** (the old stale prototype branch
+nothing pushes to, so linking never risked the then-current manually-promoted Production). A `vercel.json`
+(`{"framework": "nextjs"}`) was added to the repo root because the project's persisted framework setting
+is `null` from its chaotic history and a git-triggered build otherwise defaults to static-site detection
+(`STATIC_BUILD_NO_OUT_DIR`) — same underlying issue the old manual deploys worked around with
+`projectSettings.framework`, now fixed at the repo level so every future git-triggered build (Preview or
+Production) picks it up automatically. Going forward: **just `git push` — Vercel builds and deploys
+itself**, no more manual file-tree assembly needed for this project.
+
+**Promotion mechanism for this checkpoint**: merged `claude/snk-life-os-i18n-news` into `main` and pushed
+`main`, which is this project's Vercel Production Branch — this triggers a real Production build of the
+exact same verified commit tree (not a rebuild from different source) since it's a plain merge, no
+recoding. See the merge commit SHA and the resulting Production deployment ID/verification results
+appended below once complete.
+
+**What's live in this checkpoint**: everything from the Phase 1 stable checkpoint (further down this
+file) PLUS full Thai/English i18n, the Executive News Intelligence module (World/Thailand/Thai
+Rath+fallback/Business/Markets/Tech, 60-second brief, why-this-matters-to-me, Ask Stark about a story,
+News→Task/Decision/Note actions, Saved News), and recurring Schedule (daily/weekly/selected-weekdays/
+monthly/yearly/custom interval, end-by-date-or-count, skip/edit-this/edit-this-and-future/edit-series,
+completion history) with a mobile-safe Start/End form layout (stacks below `sm`, no horizontal overflow).
+
+### Known scope trade-off carried into this checkpoint (unchanged from earlier note)
+
+The bespoke Schedule page dropped `business_id`/`project_id` linking that the old generic-resource-engine
+Schedule page had. The Timeline page still reads raw `schedule_events` rows (a recurring event only
+shows on Timeline at its literal first-occurrence date, not every occurrence) — Today's Now/Next/Schedule
+sections were fixed to expand recurring occurrences correctly, Timeline was not. Worth a follow-up pass.
+
+## 🟡 PHASE 2 CHECKPOINT (superseded by the promotion above once complete) — 2026-09-02
 
 **Branch**: `claude/snk-life-os-i18n-news`
 **Commit**: `b97faf8567546d59725890f9b3d996bbdcbe51b8` — pushed to
