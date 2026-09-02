@@ -1,6 +1,60 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (Phase 4 — Stock Markets — in Preview, same feature branch as Phase 3; Production still on Phase 2).
+Last verified: 2026-09-02 (Phase 4 — Stock Markets — selection-state bug fixed and verified by
+actually driving the app in a browser, in Preview; Production still on Phase 2).
+
+## 🐛 PHASE 4 FIX — stock selection getting stuck (2026-09-02, commit `b74d66f`)
+
+**Report**: tapping a SET50/S&P500 row didn't change the detail header — stuck on AAPL.
+
+**Root cause, found by tracing the render path (not guessed)**: `StockHeader`'s success branch
+rendered `quote.symbol`/`quote.name` — the async-fetched quote object — instead of the actual
+current selection. `selectedSymbol` updated instantly on tap, but `selectedQuote` (fetched via
+`/api/stocks/chart`) kept holding the *previous* stock's data until its own fetch resolved. Since
+the header trusted `quote.symbol` over the real selection, any tap where the new fetch was slow,
+failed, or simply hadn't settled yet left the header showing the old stock — this is a permanent
+"stuck" state, not just a flash, whenever a fetch for the new symbol never comes back with a
+result (plausible against a real, occasionally-flaky third-party API like Yahoo's undocumented
+endpoints from Vercel's edge — exactly what Preview QA would hit).
+
+**Fix** (`components/stocks/stock-header.tsx`, `components/stocks/stock-market-dashboard.tsx`,
+`components/stocks/stock-table.tsx`):
+- `StockHeader` now takes `symbol`/`name` as separate, always-synchronous props (sourced from
+  constituent metadata in the parent) and uses those as the single source of truth for what's
+  displayed; `quote` only gates price/change/market-status, never the symbol/name shown.
+- `StockMarketDashboard` clears `selectedQuote`/`chart` to null/[] the instant `selectedSymbol`
+  changes (before the new fetch even starts), so a slow/failed fetch can never leave stale data
+  from the previous stock on screen.
+- Watch/Add Holding/Price Alert/Note/Ask Stark now target `selectedMeta` (symbol+name, always
+  available) instead of requiring a resolved quote — these work even when live price data is
+  temporarily unavailable, per the report's explicit "separate selection state from data
+  availability" requirement.
+- Related News now keys off the selected symbol/name directly, independent of quote state.
+- Added per-market last-selected memory (`lastSelectedByMarket`): switching Thailand↔US now
+  restores each market's last-tapped stock instead of always resetting to the default.
+- Table rows: explicit `h-[44px] min-h-[44px]` tap target, `aria-selected` on the highlighted row.
+
+**How this was verified — actually driving the app, not just reading code**: this sandbox cannot
+reach the live Vercel Preview or Supabase (same network wall documented elsewhere in this file), so
+a local Playwright browser was driven against `next dev` with `middleware.ts` temporarily
+no-op'd (Supabase's auth check is unreachable from here too) and `/api/stocks/*`/`/api/news*`
+responses mocked. `middleware.ts` was restored from git before committing — `git diff` confirmed
+zero unintended changes beyond the three component files. Confirmed by tapping through, in
+sequence: ADVANC → AOT → CPALL → KBANK → PTT (header updated every time), then ADVANC again with
+its quote endpoint deliberately mocked to fail (header still correctly showed "ADVANC / Advanced
+Info Service" with a provider-unavailable message, never reverting to PTT), then AAPL → MSFT →
+NVDA → GOOGL → AMZN on the US side, then TH↔US↔TH↔US switching (confirmed ADVANC and AMZN were
+correctly restored as each market's last pick). Zero console/page errors from the app itself.
+
+**Still unverified from this sandbox** (as with the rest of Phase 4): real behavior against the
+actual Yahoo Finance endpoints from Vercel's servers — the mocked test proves the selection *logic*
+is now correct regardless of how slow/unreliable the data fetch is, which was the actual point of
+failure, but real-device Preview QA is still what confirms live data quality.
+
+Build: `npx tsc --noEmit` and `npm run build` both clean. Pushed to
+`claude/snk-life-os-crypto-markets`, git-triggered Preview deployment `dpl_3FqqRcrqAmhQxAXJTggwFRd1ur93`
+reached READY, `/markets` still correctly redirects unauthenticated to `/login`, zero runtime
+errors recorded. Production untouched.
 
 ## 🟡 PHASE 4 — STOCK MARKETS EXPERIENCE (2026-09-02, in progress on the same feature branch as Phase 3)
 
