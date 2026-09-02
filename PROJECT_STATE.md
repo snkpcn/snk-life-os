@@ -39,50 +39,85 @@ There is no recoverable, working application source anywhere (git or any of the 
 - Reuse the recovered design language (dark background, gold accent, card-based layout, bottom nav, section set) as the visual/IA starting point.
 - Wire every screen to the real 36-table schema instead of localStorage.
 
-## CURRENT STATE — read this section first (last updated 2026-09-01, end of this work session)
+## CURRENT STATE — read this section first (last updated 2026-09-02)
 
-**Latest commit**: `0d1f57c` "Simplify database.types.ts to a compact generic shape", on branch
-`claude/snk-life-os-audit-u77d7n`, pushed to `origin/claude/snk-life-os-audit-u77d7n`. Verified
-`git rev-parse HEAD` matches `origin/claude/snk-life-os-audit-u77d7n` exactly — nothing is stranded
-locally. Full commit history on this branch:
+**Latest commit**: `b1b8fc4` "Harden login: remove public signup, gate magic link behind a flag", on
+branch `claude/snk-life-os-audit-u77d7n`, pushed to `origin/claude/snk-life-os-audit-u77d7n`. Full
+commit history on this branch:
 1. `f98ed8d` — PROJECT_STATE.md + package.json scaffold
 2. `d123de7` — Full Next.js 14 app build (all features below)
 3. `0d1f57c` — Simplified `lib/database.types.ts` from the 2032-line Supabase-generated file to a
    ~20-line generic shape (see "database.types.ts simplification" section below for why this is safe)
+4. `570b16b` — PROJECT_STATE.md checkpoint before a usage-limit warning
+5. `b1b8fc4` — Removed the public signup path from `/login` entirely (no `auth.signUp` code path
+   remains client-side) and gated Magic Link behind `NEXT_PUBLIC_ENABLE_MAGIC_LINK` (default `false`)
 
 **`main` branch is untouched** (still just the old stale `index.html`). Nothing has been merged to
 main. A PR has not been opened (not requested).
 
-### Live Preview deployment (WORKING — first ever successful deploy on this project)
+### Live Preview deployment (WORKING, auth-hardened — latest)
 
-**URL: https://snk-life-os-final-stable2-alkbzsm7s-7hchbrnqkg-4613.vercel.app**
+**URL: https://snk-life-os-final-stable2-oqirk4nxz-7hchbrnqkg-4613.vercel.app**
+
+(A prior preview URL `...-alkbzsm7s-...` also exists and still works but is now one commit behind —
+use the `oqirk4nxz` URL above, it has the auth hardening.)
 
 - Vercel project: `snk-life-os-final-stable2` (`prj_av6ga8I6fFyWzztnO9sUSd2m8Rp7`), the canonical one — no new project created.
-- Deployment ID `dpl_C2SMzya1KUHcpK5f7kJo2mtYLSSP`, target=`preview`, state=`READY`.
-- **Verified working**: fetched `/login` → real Next.js SSR HTML with correct JS chunk references (not
-  the old static shell). Fetched the actual JS chunk `page-600d95b333e2dc29.js` → 200, contains real
-  compiled login logic wired to the correct Supabase URL/key. This is the **first deployment in this
-  project's entire history that has ever shipped working JavaScript** — every prior deploy (11 on this
-  project, more across 28 sibling projects) only uploaded `index.html` + `style.css` and 404'd on the
-  JS file, per their build logs.
-- **Two deploy bugs fixed along the way** (both project-level misconfigurations, not code bugs):
-  1. First attempt used `deploy_to_vercel` without an explicit framework → Vercel's build treated it as
-     a static site (`framework: null` was persisted on the project from its chaotic history) and failed
-     with `STATIC_BUILD_NO_OUT_DIR` (looked for a `public/` dir instead of running the Next.js builder).
-     Fixed by passing `projectSettings: {framework: "nextjs"}` explicitly on the deploy call.
+- Deployment ID `dpl_49NjTabWm1GsnhJXuU3S5xLtbrbV`, target=`preview`, state=`READY`.
+- **Auth verified live** (2026-09-02): two real accounts now exist in `auth.users`
+  (`preechanan.chanon@gmail.com`, `444pcn@gmail.com`); `preechanan.chanon@gmail.com` has a populated
+  `last_sign_in_at`, meaning a real successful password sign-in has already happened through the
+  deployed app from a real device (outside this sandbox) — end-to-end auth is confirmed working, not
+  just theoretically correct.
+- **Auth hardening applied and verified** (this update, in response to explicit user request):
+  1. **Public signup removed from the UI entirely.** Fetched the compiled login JS chunk directly and
+     confirmed it contains only `signInWithPassword` — no `signUp` call, no "Create account" text, no
+     toggle. This is a client-side removal only; see "Still needs your action" below for the
+     authoritative backend control.
+  2. **Magic Link hidden** behind `NEXT_PUBLIC_ENABLE_MAGIC_LINK=false` (in the committed `.env`). The
+     compiled JS confirms the mode-toggle UI was tree-shaken away entirely (compiles to a `false`
+     literal). Flip to `"true"` in `.env` (or as a Vercel env var) and redeploy once SMTP is verified —
+     no other code change needed.
+  3. **Protected-route enforcement re-verified on this deployment**: fetched `/tasks` with no auth
+     cookie → server-side redirect to `/login` (`x-matched-path: /login`), confirmed via
+     `mcp__Vercel__web_fetch_vercel_url`.
+  4. **No SSO wall**: fetched both `/login` and a JS chunk directly → plain 200 responses, no redirect
+     to a Vercel login page (the project-wide SSO protection disabled earlier still applies to this new
+     deployment, as expected — protection settings are project-level, not per-deployment).
+- **Session persistence and logout**: implemented via the standard Supabase SSR cookie pattern
+  (`@supabase/ssr`'s `createBrowserClient`/`createServerClient` with `getAll`/`setAll` cookie handlers,
+  middleware refreshing the session on every request). This is the exact pattern from Supabase's own
+  SSR documentation and cannot be exercised end-to-end from this sandbox (see network limitation
+  section below), but is structurally correct and is the same code path that already produced the real
+  successful sign-in recorded in `auth.users`. Logout (`components/app-shell.tsx::handleSignOut`) calls
+  `supabase.auth.signOut()` then redirects to `/login` and calls `router.refresh()` to clear cached
+  server data — this needs your on-device confirmation (see checklist below).
+- **Still needs your action — not achievable via any available tool**: the authoritative "Allow new
+  users to sign up" toggle lives in the Supabase dashboard (Authentication → Providers → Email →
+  "Allow new users to sign up"), not in any Supabase MCP tool exposed to this session. Removing the
+  signup UI stops a casual visitor from finding it, but someone who already has the public anon key
+  (which is, by design, public) could still call the signup API directly until that toggle is off.
+  **Direct link**: `https://supabase.com/dashboard/project/pbbihfipfbpiqbiqlagd/auth/providers` — turn
+  off "Allow new users to sign up" under the Email provider. This is the one step only you can do.
+- **Two deploy bugs fixed earlier** (both project-level misconfigurations, not code bugs, now resolved
+  for all future deploys to this project):
+  1. `framework: null` was persisted on the project from its chaotic history → Vercel's build treated
+     it as a static site and failed with `STATIC_BUILD_NO_OUT_DIR`. Fixed by passing
+     `projectSettings: {framework: "nextjs"}` explicitly on every `deploy_to_vercel` call.
   2. The project had **Vercel Authentication (SSO protection) enabled** (`deploymentType:
      all_except_custom_domains`), which would have redirected any real visitor (including the user's
-     iPhone) to a Vercel login wall before they could see the app at all. **Disabled** via
-     `update_project_deployment_protection` (`ssoProtection: {enabled: false}`) — confirmed via a
-     re-fetch that JS chunks now return 200 with no SSO redirect.
+     iPhone) to a Vercel login wall. **Disabled** via `update_project_deployment_protection`
+     (`ssoProtection: {enabled: false}`) — this is a project-wide setting, confirmed still in effect on
+     the newest deployment too.
 - **Production has NOT been touched.** The old broken production deployment (2-file, 404 on app.js) is
   still live at `snk-life-os-final-stable2.vercel.app`. Do not promote until the user confirms Preview
   QA passes on their iPhone (explicit instruction from the user — production promotion is blocked on
   their sign-off).
-- If this exact preview URL ever expires/rotates, redeploy with the same `deploy_to_vercel` call
-  (target=`preview`, name=`snk-life-os-final-stable2`, teamId=`team_Xa2lB3AEknYc1qIFPeQ2IHtF`,
-  `projectSettings: {framework: "nextjs"}`) using the current contents of the files listed below — no
-  code changes needed, this exact repo state builds cleanly.
+- To redeploy (e.g. after further fixes), use `deploy_to_vercel` with target=`preview`,
+  name=`snk-life-os-final-stable2`, teamId=`team_Xa2lB3AEknYc1qIFPeQ2IHtF`,
+  `projectSettings: {framework: "nextjs"}`, and the current contents of every file in the repo (the
+  tool takes a full file set each call, not a diff) — no other code changes needed, this exact repo
+  state builds cleanly.
 
 ### What is fully implemented and working (code-complete, build-verified)
 
