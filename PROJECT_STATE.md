@@ -1,7 +1,130 @@
 # SNK LIFE OS — Project State
 
-Last verified: 2026-09-02 (Phase 3 Crypto + Phase 4 Stock Markets LAUNCHED to Production —
-see checkpoint below).
+Last verified: 2026-09-02 (Post-launch hotfix branch ready in Preview, NOT yet promoted —
+see "HOTFIX" section immediately below. Production is still on the Phase 3+4 checkpoint
+further down this file, untouched).
+
+## 🟡 HOTFIX — Gold + USD/THB restored, Stark config checked (2026-09-02, Preview only)
+
+**Status: Preview-verified, waiting on user approval before Production promotion. Production
+has NOT been touched by this hotfix.**
+
+- **Branch**: `claude/snk-life-os-hotfix-gold-stark`, created from Production commit `f6dfb309`
+- **Final commit on this branch**: `471779b81c071cf270fa970e7514b8b4ac7e57cf`
+- **Preview URL** (git-linked, auto-deployed): https://snk-life-os-final-stable2-git-claude-snk-ca5960-7hchbrnqkg-4613.vercel.app
+- **Latest Preview deployment**: `dpl_7u9QUwexyM3C7nn7Mze9RKC3C9ze`, state `READY`, zero runtime errors in the last hour
+
+### Issue 1 — Gold + USD/THB restored (real regression fix, not just a subtitle fix)
+
+Root cause of the regression disclosed in the Phase 3+4 promotion report: Gold and USD/THB
+became completely unreachable (not just mislabeled) when the Overview tab was rebuilt for the
+stock-selection fix — no route, no UI, nothing behind the old subtitle text.
+
+Fixed with two new API routes (`/api/markets/gold`, `/api/markets/fx`, both auth-gated like
+every other route) and a new Markets tab UI (`components/markets/instrument-panel.tsx`,
+reusing the existing Sheet/Chart/News/ResourceForm patterns), wired into `app/(app)/markets/page.tsx`
+as new "Gold" and "FX" tabs alongside the untouched Overview/Crypto tabs.
+
+Two real bugs were found and fixed while verifying this against the actual deployed Preview
+(via a temporary unauthenticated debug route, same reversible pattern used for the earlier
+stock-data fix — added, used once, then fully removed and middleware confirmed byte-identical
+to the pre-hotfix baseline via `git diff` against `f6dfb309`):
+
+1. The gold Yahoo symbol was wrong. `XAUUSD=X` and `XAU=X` (a guessed FX-style spot-gold ticker)
+   both return HTTP 404 "symbol may be delisted" from Yahoo's v8 chart endpoint. The only symbol
+   that returned real data was **`GC=F`** (COMEX gold futures, front-month) — found by probing
+   four candidates (`GC=F`, `XAUUSD=X`, `XAU=X`, `MGC=F`) directly against Yahoo from the live
+   deployment. Since a futures price is genuinely a different, distinct thing from an LBMA spot
+   fix (not just an abundance-of-caution relabel), everywhere it's shown or fed to Stark now
+   honestly says **"GOLD" / "Gold Futures (COMEX)"**, not "XAU/USD" / "Gold Spot".
+2. USD/THB's symbol (`THB=X`) was correct, but under concurrent request load the shared 8-second
+   fetch timeout (`TIMEOUT_MS` in `lib/stocks/yahoo.ts`, used by the working stock-quote path)
+   was firing before Yahoo's response for this specific endpoint completed. Added a separate
+   15-second timeout (`fetchJsonLongTimeout`) used only by the new raw-instrument functions —
+   the existing stock-quote `fetchJson`/`TIMEOUT_MS` path is completely untouched.
+
+**Real data confirmed from the live Preview deployment** (fetched via the temporary debug
+route before it was removed):
+- Gold (`GC=F`): price **$4381.20 USD**, change **-$96.90 (-2.16%)**, day range $4329.20–$4391.40,
+  exchange COMEX, 23 chart points, source Yahoo Finance — **PASS**
+- USD/THB (`THB=X`): price **33.22**, change **+0.439 (+1.34%)**, day range 33.17–33.41,
+  source Yahoo Finance — **PASS**
+- Indicative Thai gold-per-baht-weight (derived, never claimed as official): **≈ ฿71,332** per
+  baht-weight (15.244g), computed as (GC=F price ÷ 31.1034768g/oz) × 15.244g × USD/THB rate,
+  labeled "Indicative / Estimated" / "ประมาณการ" in the UI (amber disclosure box) and in the
+  Stark system-prompt instruction, explicitly never presented as the official Gold Traders
+  Association of Thailand price, in both `lib/i18n/en.ts` and `lib/i18n/th.ts`.
+- Watch / Add Holding / Price Alert / Note actions on Gold/FX reuse the existing
+  `RESOURCES.watchlist_items/holdings/price_alerts/notes_table` + `ResourceForm` prefill wiring
+  exactly as the working Stocks/Crypto flows do — same code path, not reimplemented.
+- Related News on Gold/FX reuses the existing `NewsCard`/`NewsArticleSheet` components,
+  keyword-matched (`["gold","xau","ทองคำ","bullion"]` for Gold, FX equivalent for USD/THB).
+- Ask Stark on Gold/FX posts an `instrument` context block (additive-only addition to
+  `app/api/stark/route.ts` — existing crypto/stock context logic untouched) that instructs
+  Stark to (a) never invent numbers, (b) note the COMEX-futures-vs-spot distinction when
+  relevant, (c) never call the Thai-baht conversion the official Gold Traders Association price.
+
+### Issue 2 — Stark Anthropic configuration: NEEDS USER ACTION
+
+Confirmed via a temporary unauthenticated runtime-check route (`app/api/system/stark-check`,
+now fully removed) that made a real minimal Anthropic API test call from the live Preview
+deployment:
+
+**`ANTHROPIC_API_KEY` is NOT set on the Preview environment** (`{"keyPresent":false,"testCallSucceeded":false}`).
+The existing `/api/stark` route already degrades gracefully when this is missing — it returns
+a clear "Stark isn't connected yet" message (TH/EN) instead of crashing or breaking the rest of
+the app — so this is a configuration gap, not a code bug, and nothing else in the app is affected.
+
+**Verified safe** before and during this check (per the explicit instruction never to print or
+request the secret): grepped all source for `ANTHROPIC_API_KEY` references (server-only files
+only, `app/api/stark/route.ts` and the now-removed `stark-check` route); confirmed it never
+appears in any client bundle chunk; confirmed `.env`/`.env.example` (tracked in git, by design —
+`.env` only holds genuinely public `NEXT_PUBLIC_*` values protected by Supabase RLS, not secrecy)
+contain no real key value; searched full git history for any literal `ANTHROPIC_API_KEY=sk-...`
+pattern and found none. The debug route itself only ever returned booleans and a whitelisted
+failure-category enum derived from `err.status` — never the key or raw error text.
+
+**Action needed from the user** (one action, then tell Claude to continue):
+Open https://vercel.com/7hchbrnqkg-4613/snk-life-os-final-stable2/settings/environment-variables
+and add `ANTHROPIC_API_KEY` with your real Anthropic API key, for both the **Preview** and
+**Production** environments. Once confirmed, Stark verification will be re-run automatically.
+
+### Issue 3 — Authenticated Preview/Production smoke test: NEEDS USER DEVICE
+
+This sandbox's outbound network policy blocks all access to `supabase.co` and `vercel.app` at
+the OS level (see the "Sandbox network limitation" section further down this file — unchanged,
+still a hard environment wall, not a shortcut). This means no authenticated flow (login, session
+persistence, Quick Add, save/refresh/logout/login persistence) could be exercised end-to-end
+from this environment. Per the explicit instruction not to fabricate a PASS, this is reported
+honestly as **NEEDS USER DEVICE**, with everything achievable from this environment (real Yahoo
+Gold/FX data, Stark config presence, build/typecheck, zero runtime errors) already verified above.
+
+**Manual QA checklist — only the items that genuinely need your authenticated iPhone**:
+1. Log in, confirm session persists after a page refresh.
+2. Open Markets → tap the new **Gold** tab → confirm a real price, chart, and the amber
+   "Indicative / Estimated" disclosure box render correctly on mobile.
+3. Open Markets → tap the new **FX** tab → confirm USD/THB renders correctly.
+4. On Gold, tap Watch, Add Holding, Price Alert, and Note — confirm each opens a working form
+   and saves.
+5. Confirm existing Stocks (SET50/S&P500 selection + prices), Crypto, News, Schedule, Recurring
+   Schedule, and Money still work exactly as before (regression check — nothing in this hotfix
+   touched their code, but worth confirming on-device).
+6. Switch TH/EN and confirm Gold/FX labels and the indicative disclaimer translate correctly.
+7. If you've added `ANTHROPIC_API_KEY`, ask Stark a question on the Gold tab and confirm it
+   answers using the real price shown, without inventing numbers.
+
+### Build/typecheck status
+
+`npx tsc --noEmit`: clean (exit 0). `npm run build`: clean, all routes compile including the
+new `/api/markets/gold`, `/api/markets/fx` routes. Both temporary debug routes
+(`app/api/system/stark-check`, `app/api/system/gold-fx-check`) and their middleware allowlist
+entries are fully removed — `lib/supabase/middleware.ts` confirmed byte-identical to the
+pre-hotfix Production baseline via `git diff f6dfb309 -- lib/supabase/middleware.ts` (empty output).
+
+**Production touched: NO.** This entire hotfix exists only on the `claude/snk-life-os-hotfix-gold-stark`
+branch and its Preview deployment. Waiting for explicit user approval before any Production promotion.
+
+---
 
 ## 🚀 PHASE 3+4 — PRODUCTION LIVE (2026-09-02)
 
