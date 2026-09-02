@@ -6,11 +6,7 @@ export const dynamic = "force-dynamic";
 
 // TEMPORARY, UNAUTHENTICATED — verifies the real Gemini provider integration end-to-end
 // against the live deployment, using the EXACT same system-prompt assembly and provider.chat()
-// call the real /api/stark route uses. Cannot exercise the real authenticated route directly
-// (this sandbox cannot establish a Supabase login session), so it substitutes a synthetic,
-// clearly-fake "data snapshot" for the real buildStarkContext() output — everything else
-// (locale instruction, system-prompt shape, provider selection) is identical to production
-// code. Never returns a key value. Removed once verified.
+// call the real /api/stark route uses. Removed once verified.
 const FAKE_CONTEXT = `SNK LIFE OS DATA SNAPSHOT (TEST FIXTURE — NOT REAL USER DATA):
 - Active project codename: NEBULA-7
 - Today's top task: "Ship the quarterly board deck"
@@ -32,36 +28,8 @@ async function runCheck(locale: "th" | "en") {
   }
 }
 
-// Diagnostic-only: gemini-3.6-flash is consistently 503/timing out (real, external Google
-// capacity issue, not our code) — probe a few alternative real Gemini model names directly to
-// find one actually reachable right now, before assuming the whole provider is unusable.
-const MODEL_CANDIDATES = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-pro-latest"];
-
-async function probeModel(model: string, apiKey: string): Promise<{ model: string; ok: boolean; status?: number; bodyPreview?: string; error?: string }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with exactly one word: ok" }] }] }),
-      signal: controller.signal,
-    });
-    const bodyText = await res.text().catch(() => "");
-    return { model, ok: res.ok, status: res.status, bodyPreview: bodyText.slice(0, 150) };
-  } catch (err: any) {
-    return { model, ok: false, error: err?.name === "AbortError" ? "timeout" : String(err?.message || err).slice(0, 150) };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function GET() {
   const provider = getConfiguredProvider();
   const [th, en] = await Promise.all([runCheck("th"), runCheck("en")]);
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  const modelProbes = apiKey ? await Promise.all(MODEL_CANDIDATES.map((m) => probeModel(m, apiKey))) : [];
-
-  return NextResponse.json({ providerId: provider?.id ?? null, th, en, modelProbes });
+  return NextResponse.json({ providerId: provider?.id ?? null, th, en });
 }
