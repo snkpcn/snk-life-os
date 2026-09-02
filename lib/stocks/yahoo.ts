@@ -233,9 +233,31 @@ export type RawInstrumentQuote = {
   updatedAt: string;
 };
 
+// FX/commodity chart-meta calls have been observed needing longer than the 8s used for
+// equities under concurrent load, so raw-instrument fetches get their own longer timeout —
+// kept separate from fetchJson/TIMEOUT_MS so the working stock-quote path is untouched.
+const RAW_INSTRUMENT_TIMEOUT_MS = 15000;
+
+async function fetchJsonLongTimeout(url: string, revalidate: number): Promise<any | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RAW_INSTRUMENT_TIMEOUT_MS);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      next: { revalidate },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SNKLifeOS/1.0)" },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchRawInstrumentQuote(yahooSymbol: string, displaySymbol: string, displayName: string, fallbackCurrency: string): Promise<RawInstrumentQuote | null> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=5d&interval=1d`;
-  const data = await fetchJson(url, 45);
+  const data = await fetchJsonLongTimeout(url, 45);
   const meta = data?.chart?.result?.[0]?.meta;
   if (!meta) return null;
 
@@ -266,7 +288,7 @@ export async function fetchRawInstrumentQuote(yahooSymbol: string, displaySymbol
 export async function fetchRawInstrumentChart(yahooSymbol: string, range: StockChartRange): Promise<StockChartPoint[]> {
   const params = CHART_RANGE_PARAMS[range];
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${params.range}&interval=${params.interval}`;
-  const data = await fetchJson(url, 90);
+  const data = await fetchJsonLongTimeout(url, 90);
   const result = data?.chart?.result?.[0];
   if (!result) return [];
 

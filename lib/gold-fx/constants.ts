@@ -1,6 +1,8 @@
-// Real Yahoo Finance symbols — not fabricated. "XAUUSD=X" is Yahoo's spot gold (troy ounce,
-// USD) FX-style ticker; "THB=X" is Yahoo's convention for USD/THB (base USD, quote THB).
-export const GOLD_YAHOO_SYMBOL = "XAUUSD=X";
+// Real Yahoo Finance symbols — not fabricated. "XAU=X" is Yahoo's spot gold (troy ounce, USD)
+// FX-style ticker (same base=X convention as THB=X below) — confirmed live against Yahoo's v8
+// chart endpoint; "XAUUSD=X" returns 404 "symbol may be delisted" and was wrong.
+// "THB=X" is Yahoo's convention for USD/THB (base USD, quote THB).
+export const GOLD_YAHOO_SYMBOL = "XAU=X";
 export const GOLD_DISPLAY_SYMBOL = "XAU/USD";
 export const GOLD_DISPLAY_NAME = "Gold Spot";
 
