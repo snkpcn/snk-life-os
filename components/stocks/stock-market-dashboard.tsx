@@ -23,6 +23,8 @@ const NEWS_CATEGORIES: Record<StockMarket, string[]> = {
   US: ["markets", "business", "tech"],
 };
 
+const DEFAULT_SYMBOL: Record<StockMarket, string> = { TH: SET50[0].symbol, US: SP500[0].symbol };
+
 export function StockMarketDashboard() {
   const { t, locale } = useI18n();
   const [market, setMarket] = useState<StockMarket>("TH");
@@ -30,7 +32,14 @@ export function StockMarketDashboard() {
   const [quotesLoading, setQuotesLoading] = useState(false);
 
   const constituents = market === "TH" ? SET50 : SP500;
-  const [selectedSymbol, setSelectedSymbol] = useState(constituents[0].symbol);
+
+  // Selection state is deliberately separate from any fetched data — tapping a row must
+  // change this immediately, regardless of whether that stock's quote/chart ever loads.
+  const [selectedSymbol, setSelectedSymbol] = useState(DEFAULT_SYMBOL.TH);
+  // Remembers the last symbol picked in each market, so switching markets and back restores it.
+  const [lastSelectedByMarket, setLastSelectedByMarket] = useState<Record<StockMarket, string>>({ ...DEFAULT_SYMBOL });
+
+  const selectedMeta = useMemo(() => constituents.find((c) => c.symbol === selectedSymbol) ?? constituents[0], [constituents, selectedSymbol]);
 
   const [selectedQuote, setSelectedQuote] = useState<StockQuote | null>(null);
   const [chart, setChart] = useState<StockChartPoint[]>([]);
@@ -45,13 +54,17 @@ export function StockMarketDashboard() {
   const [askReply, setAskReply] = useState<string | null>(null);
   const [askBusy, setAskBusy] = useState(false);
 
-  // Market switch resets selection to that market's first constituent — never carries a
-  // stale symbol from the other market into a mismatched chart/header.
-  useEffect(() => {
-    const list = market === "TH" ? SET50 : SP500;
-    setSelectedSymbol(list[0].symbol);
+  function selectSymbol(symbol: string) {
+    setSelectedSymbol(symbol);
+    setLastSelectedByMarket((prev) => ({ ...prev, [market]: symbol }));
+  }
+
+  function switchMarket(next: StockMarket) {
+    if (next === market) return;
+    setMarket(next);
+    setSelectedSymbol(lastSelectedByMarket[next]);
     setAskReply(null);
-  }, [market]);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +87,10 @@ export function StockMarketDashboard() {
 
   useEffect(() => {
     let cancelled = false;
+    // Clear any previous stock's quote/chart immediately — never let ADVANC's header keep
+    // showing AAPL's stale data just because AAPL's fetch happened to resolve first/only.
+    setSelectedQuote(null);
+    setChart([]);
     setChartLoading(true);
     fetch(`/api/stocks/chart?symbol=${encodeURIComponent(selectedSymbol)}&market=${market}&range=${range}`)
       .then((r) => r.json())
@@ -165,10 +182,9 @@ export function StockMarketDashboard() {
   }
 
   const relatedNews = useMemo(() => {
-    if (!selectedQuote) return [];
-    const keywords = [selectedQuote.symbol.toLowerCase(), selectedQuote.name.toLowerCase()];
+    const keywords = [selectedMeta.symbol.toLowerCase(), selectedMeta.name.toLowerCase()];
     return marketNews.filter((a) => keywords.some((k) => a.headline.toLowerCase().includes(k) || a.summary.toLowerCase().includes(k))).slice(0, 4);
-  }, [marketNews, selectedQuote]);
+  }, [marketNews, selectedMeta]);
 
   async function ask(question: string) {
     if (!question.trim() || askBusy) return;
@@ -182,16 +198,14 @@ export function StockMarketDashboard() {
           message: question,
           history: [],
           locale,
-          stock: selectedQuote
-            ? {
-                symbol: selectedQuote.symbol,
-                name: selectedQuote.name,
-                market: selectedQuote.market,
-                price: selectedQuote.price,
-                changePercent: selectedQuote.changePercent,
-                currency: selectedQuote.currency,
-              }
-            : undefined,
+          stock: {
+            symbol: selectedMeta.symbol,
+            name: selectedMeta.name,
+            market,
+            price: selectedQuote?.price ?? null,
+            changePercent: selectedQuote?.changePercent ?? null,
+            currency: selectedQuote?.currency || (market === "TH" ? "THB" : "USD"),
+          },
         }),
       });
       const data = await res.json();
@@ -205,18 +219,21 @@ export function StockMarketDashboard() {
   }
 
   const exchangeLabel = market === "TH" ? "SET" : selectedQuote?.exchange || "US";
+  const currency = selectedQuote?.currency || (market === "TH" ? "THB" : "USD");
 
-  if (action && selectedQuote) {
+  // Actions target selectedMeta (symbol + name), which is always available synchronously —
+  // Watch/Holding/Alert/Note must work even when the live quote hasn't loaded or failed.
+  if (action) {
     const resource =
       action === "watch" ? RESOURCES.watchlist_items : action === "holding" ? RESOURCES.holdings : action === "alert" ? RESOURCES.price_alerts : RESOURCES.notes_table;
     const prefill =
       action === "watch"
-        ? { ticker: selectedQuote.symbol, name: selectedQuote.name, market: exchangeLabel }
+        ? { ticker: selectedMeta.symbol, name: selectedMeta.name, market: exchangeLabel }
         : action === "holding"
-          ? { ticker: selectedQuote.symbol, name: selectedQuote.name, market: exchangeLabel, asset_class: "Stock", currency: selectedQuote.currency }
+          ? { ticker: selectedMeta.symbol, name: selectedMeta.name, market: exchangeLabel, asset_class: "Stock", currency }
           : action === "alert"
-            ? { symbol: selectedQuote.symbol, market: exchangeLabel, currency: selectedQuote.currency }
-            : { title: `${selectedQuote.name} (${selectedQuote.symbol})` };
+            ? { symbol: selectedMeta.symbol, market: exchangeLabel, currency }
+            : { title: `${selectedMeta.name} (${selectedMeta.symbol})` };
     return (
       <Card className="mt-4">
         <ResourceForm resource={resource} prefill={prefill} onCancel={() => setAction(null)} onSaved={() => setAction(null)} />
@@ -230,7 +247,7 @@ export function StockMarketDashboard() {
         {(["TH", "US"] as StockMarket[]).map((m) => (
           <button
             key={m}
-            onClick={() => setMarket(m)}
+            onClick={() => switchMarket(m)}
             className={`flex-1 rounded-xl border px-4 py-2 text-sm font-bold ${market === m ? "border-gold bg-gold/10 text-gold" : "border-line text-muted"}`}
           >
             {m === "TH" ? t("stocksPage.marketThailand") : t("stocksPage.marketUS")}
@@ -239,7 +256,7 @@ export function StockMarketDashboard() {
       </div>
 
       <Card>
-        <StockHeader symbol={selectedSymbol} quote={selectedQuote} loading={chartLoading} />
+        <StockHeader symbol={selectedMeta.symbol} name={selectedMeta.name} quote={selectedQuote} loading={chartLoading} />
 
         <div className="mt-3 flex flex-wrap gap-2">
           {RANGES.map((r) => (
@@ -258,24 +275,18 @@ export function StockMarketDashboard() {
         {!chartLoading && chart.length === 0 && <p className="mt-2 text-center text-xs text-muted">{t("stocksPage.chartUnavailable")}</p>}
 
         <div className="mt-3 flex flex-wrap gap-2">
-          <Btn variant="gold" onClick={() => setAction("watch")} disabled={!selectedQuote}>
+          <Btn variant="gold" onClick={() => setAction("watch")}>
             {t("stocksPage.watch")}
           </Btn>
-          <Btn onClick={() => setAction("holding")} disabled={!selectedQuote}>
-            {t("stocksPage.addHolding")}
-          </Btn>
-          <Btn onClick={() => setAction("alert")} disabled={!selectedQuote}>
-            {t("stocksPage.priceAlert")}
-          </Btn>
-          <Btn onClick={() => setAction("note")} disabled={!selectedQuote}>
-            {t("stocksPage.note")}
-          </Btn>
+          <Btn onClick={() => setAction("holding")}>{t("stocksPage.addHolding")}</Btn>
+          <Btn onClick={() => setAction("alert")}>{t("stocksPage.priceAlert")}</Btn>
+          <Btn onClick={() => setAction("note")}>{t("stocksPage.note")}</Btn>
         </div>
       </Card>
 
       <SectionHead title={market === "TH" ? t("stocksPage.set50Title") : t("stocksPage.sp500Title")} subtitle={t("stocksPage.tapToOpen")} />
       <Card>
-        <StockTable constituents={constituents} quotes={quotes} selectedSymbol={selectedSymbol} onSelect={setSelectedSymbol} loading={quotesLoading} />
+        <StockTable constituents={constituents} quotes={quotes} selectedSymbol={selectedSymbol} onSelect={selectSymbol} loading={quotesLoading} />
       </Card>
 
       <SectionHead title={t("stocksPage.marketNews")} />
@@ -286,9 +297,9 @@ export function StockMarketDashboard() {
         ))}
       </Card>
 
-      {selectedQuote && relatedNews.length > 0 && (
+      {relatedNews.length > 0 && (
         <>
-          <SectionHead title={t("stocksPage.relatedNews", { symbol: selectedQuote.symbol })} />
+          <SectionHead title={t("stocksPage.relatedNews", { symbol: selectedMeta.symbol })} />
           <Card>
             {relatedNews.map((n) => (
               <NewsCard key={n.id} article={n} saved={savedKeys.has(n.dedupe_key)} onOpen={() => setSelectedArticle(n)} onToggleSave={() => toggleSave(n)} />

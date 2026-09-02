@@ -119,7 +119,8 @@ export function StockTable({
               <tr
                 key={r.meta.symbol}
                 onClick={() => onSelect(r.meta.symbol)}
-                className={`cursor-pointer border-b border-line last:border-0 ${r.meta.symbol === selectedSymbol ? "bg-gold/10" : ""}`}
+                aria-selected={r.meta.symbol === selectedSymbol}
+                className={`h-[44px] min-h-[44px] cursor-pointer border-b border-line last:border-0 ${r.meta.symbol === selectedSymbol ? "bg-gold/10" : ""}`}
               >
                 <td className="max-w-[140px] px-3 py-2">
                   <div className="font-bold">{r.meta.symbol}</div>
