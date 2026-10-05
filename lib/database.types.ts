@@ -14,7 +14,7 @@ type GenericTable = {
 export type Database = {
   public: {
     Tables: Record<string, GenericTable>;
-    Views: Record<string, never>;
+    Views: Record<string, { Row: Record<string, any>; Relationships: unknown[] }>;
     Functions: Record<string, never>;
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { Tabs, useActiveTab } from "@/components/tabs";
 import { MoneyStats } from "@/components/money-stats";
+import { MoneyCashOverview } from "@/components/money-cash-overview";
 import { ResourceSection } from "@/components/resource-section";
 import { RESOURCES } from "@/lib/resources";
 import { useI18n } from "@/lib/i18n/context";
@@ -28,6 +29,7 @@ function MoneyContent() {
       <Tabs tabs={TABS} />
       {active === "overview" && (
         <>
+          <MoneyCashOverview refreshKey={refreshKey} />
           <MoneyStats refreshKey={refreshKey} />
           <ResourceSection resource={RESOURCES.transactions} limit={10} onChange={bump} />
         </>
