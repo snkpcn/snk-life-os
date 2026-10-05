@@ -15,7 +15,12 @@ export type Database = {
   public: {
     Tables: Record<string, GenericTable>;
     Views: Record<string, { Row: Record<string, any>; Relationships: unknown[] }>;
-    Functions: Record<string, never>;
+    Functions: {
+      // SNK MONEY x Thongthai LINE channel (migration 20261005140000); owner-only, SECURITY DEFINER, authenticated.
+      finance_issue_binding_code: { Args: Record<string, never>; Returns: Json };
+      finance_binding_status: { Args: Record<string, never>; Returns: Json };
+      finance_unbind_active: { Args: Record<string, never>; Returns: Json };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
