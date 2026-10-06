@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createHmac, randomBytes } from 'node:crypto';
 import { harness, GROUP, OWNER, OTHER_GROUP } from './helpers/pf-harness';
 import { OWNER_ID, ids, A } from './helpers/pf-pglite';
-import { personalQuery } from '../lib/snk-money/_personal-queries';
+import { geminiPersonalQueryInterpreter, personalQuery } from '../lib/snk-money/_personal-queries';
 import { personalReadiness } from '../lib/snk-money/readiness';
 import { SNK_OS_DEFAULT_URL, supabaseRpc } from '../lib/snk-money/_personal-finance-ledger';
 import { replyToLine } from '../lib/snk-money/line-reply';
@@ -21,6 +21,58 @@ test('natural personal commands resolve the requested modules without requiring 
   for (const [phrase,kind] of Object.entries(cases)) assert.equal(personalQuery(phrase)?.kind,kind,phrase);
   for (const phrase of ['เมื่อกี้จ่ายค่าน้ำมัน 1800','พรุ่งนี้เตือนให้โทรหาช่างตอนบ่าย','มีงานใหม่ต้องทำ ต้องอ่านสรุปงาน thesis ภายในพรุ่งนี้','คุยกับแม่อยู่']) assert.equal(personalQuery(phrase),null,phrase);
   assert.equal(personalQuery('มีงานใหม่ไหม')?.kind,'tasks');
+});
+
+test('an AI-understood Thai paraphrase reads the requested facts from owner-scoped SNK RPC data', async()=>{
+  const h=await harness({personalQueryInterpreter:async(message,today,allowed)=>{
+    assert.equal(message,'คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง');
+    assert.equal(today,'2026-10-05');
+    assert.ok(allowed.includes('tasks'));
+    return {kind:'tasks',modules:['tasks'],filter:'open'};
+  }});
+  try{
+    await h.activate();
+    await h.db.query("insert into tasks(owner_id,title,status,secretary_state) values($1,'โทรหาช่างเรื่องหลังคา','todo','OPEN')",[OWNER_ID]);
+    const calls:string[]=[];const original=h.deps.rpc;
+    h.deps.rpc=async(fn,args)=>{calls.push(fn);return original(fn,args)};
+    const answer=await h.say('คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง');
+    assert.match(answer.reply??'',/โทรหาช่างเรื่องหลังคา/);
+    assert.ok(calls.includes('snk_personal_snapshot'));
+    assert.doesNotMatch(answer.reply??'',/TAMMA|ไม่มีข้อมูล/);
+  }finally{await h.db.close()}
+});
+
+test('Gemini query adapter uses the selected model and receives no backend rows',async()=>{
+  const oldKey=process.env.GEMINI_API_KEY;const oldFetch=globalThis.fetch;
+  process.env.GEMINI_API_KEY='test-key';
+  try{
+    globalThis.fetch=(async(input:any,init:any)=>{
+      assert.match(String(input),/models\/gemini-3\.1-flash-lite:generateContent/);
+      const body=JSON.parse(init.body);
+      assert.equal(body.generationConfig.responseMimeType,'application/json');
+      assert.equal(body.contents[0].parts[0].text,JSON.stringify({message:'คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง',today:'2026-10-05',allowed_modules:['tasks']}));
+      assert.doesNotMatch(init.body,/TAMMA_SECRET|OWNER_ID|transaction_rows/);
+      return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({kind:'tasks',filter:'open',period:'none'})}]}}]}),{status:200});
+    }) as typeof fetch;
+    const query=await geminiPersonalQueryInterpreter('คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง','2026-10-05',['tasks']);
+    assert.deepEqual(query,{kind:'tasks',modules:['tasks'],filter:'open'});
+  }finally{
+    globalThis.fetch=oldFetch;
+    if(oldKey===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=oldKey;
+  }
+});
+
+test('AI-selected modules still pass the group allowlist before any SNK data query',async()=>{
+  const h=await harness({personalQueryInterpreter:async()=>({kind:'tasks',modules:['tasks'],filter:'open'})});
+  try{
+    await h.activate();
+    await h.db.query("update finance_channel_bindings set allowed_modules=array['money'] where status='ACTIVE'");
+    const calls:string[]=[];const original=h.deps.rpc;
+    h.deps.rpc=async(fn,args)=>{calls.push(fn);return original(fn,args)};
+    const answer=await h.say('คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง');
+    assert.match(answer.reply??'',/ยังไม่ได้เปิดสิทธิ์/);
+    assert.ok(!calls.includes('snk_personal_snapshot'));
+  }finally{await h.db.close()}
 });
 
 test('owner statement creates the thesis task in canonical SNK data, and the next question reads it', async()=>{
@@ -184,7 +236,7 @@ test('SNK readiness is dependency-complete and independent of all Tamma endpoint
   const env={SNK_OS_SERVICE_ROLE_KEY:'test-secret',SNK_MONEY_ENABLED:'1',LINE_CHANNEL_SECRET:'test-line',LINE_CHANNEL_ACCESS_TOKEN:'test-token',GEMINI_API_KEY:'test-gemini',SNK_OS_GROUP_ENCRYPTION_KEY:randomBytes(32).toString('base64url')};
   const calls:string[]=[];
   const result=await personalReadiness(env,async(fn)=>{calls.push(fn);return {backend:true,money:true,secretary:true,snapshot:true,binding:true,active_group:true}});
-  assert.equal(result.ready,true);assert.equal(result.pullOnly,true);assert.deepEqual(calls,['snk_personal_readiness']);
+  assert.equal(result.ready,true);assert.equal(result.pullOnly,true);assert.equal(result.secretaryAiConfigured,true);assert.deepEqual(calls,['snk_personal_readiness']);
   assert.doesNotMatch(JSON.stringify(result),/test-secret|test-line|test-token|test-gemini/);
   assert.equal((await personalReadiness({...env,LINE_CHANNEL_SECRET:''},async()=>({backend:true,money:true,secretary:true,snapshot:true,binding:true,active_group:true}))).ready,false);
   assert.equal((await personalReadiness({...env,GEMINI_API_KEY:''},async()=>({backend:true,money:true,secretary:true,snapshot:true,binding:true,active_group:true}))).ready,false);
