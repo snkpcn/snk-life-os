@@ -5,7 +5,77 @@ import type { PfLedger } from './_personal-finance-ledger';
 export const PERSONAL_MODULES = ['money', 'tasks', 'schedule', 'projects', 'notes', 'coach', 'personal_summary'] as const;
 export type PersonalModule = typeof PERSONAL_MODULES[number];
 type Row = Record<string, any>;
-type Query = { kind: 'summary' | 'tasks' | 'schedule' | 'projects' | 'money' | 'notes'; modules: PersonalModule[]; filter?: string; period?: string };
+export type PersonalQuery = { kind: 'summary' | 'tasks' | 'schedule' | 'projects' | 'money' | 'notes'; modules: PersonalModule[]; filter?: string; period?: string };
+export type PersonalQueryInterpreter = (raw: string, today: string, allowed: readonly string[]) => Promise<PersonalQuery | null>;
+type Query = PersonalQuery;
+
+const QUERY_KINDS = ['summary', 'tasks', 'schedule', 'projects', 'money', 'notes', 'none'] as const;
+const QUERY_FILTERS = ['open', 'overdue', 'owner', 'waiting', 'total', 'items', 'categories', 'food', 'recent', 'recent_expense', 'none'] as const;
+const QUERY_PERIODS = ['today', 'tomorrow', 'week', 'upcoming', 'month', 'yesterday', 'last_month', 'none'] as const;
+
+/** Gemini understands open Thai phrasing. It proposes a small, validated SNK query;
+ * it never receives ledger rows and cannot issue SQL or pick an owner. */
+export const geminiPersonalQueryInterpreter: PersonalQueryInterpreter = async (raw, today, allowed) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !raw.trim() || raw.length > 1000) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      kind: { type: 'STRING', enum: [...QUERY_KINDS] },
+      filter: { type: 'STRING', enum: [...QUERY_FILTERS] },
+      period: { type: 'STRING', enum: [...QUERY_PERIODS] },
+    },
+    required: ['kind', 'filter', 'period'],
+    propertyOrdering: ['kind', 'filter', 'period'],
+  };
+  try {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: [
+          'Interpret one message from the owner in a private personal secretary chat.',
+          'Decide whether it asks to READ current personal SNK Life OS data. Never classify business/customer/Tamma requests as personal.',
+          'Understand natural Thai, paraphrases, pronouns and casual wording. Do not require fixed command phrases.',
+          'Return only the schema. Use kind=none for conversation, task creation/update, finance recording, business requests, or unclear intent.',
+          'Supported read kinds: summary, tasks (open/overdue/owner/waiting), schedule (today/tomorrow/week/upcoming), projects, notes, money (total/items/categories/food/recent/recent_expense).',
+          'Use the supplied Bangkok date to resolve relative periods. If the user says this month, period=month. Money default period=month; other kinds use their natural default.',
+          'Use only modules listed as allowed. This model selects a query type only; the server checks permissions and loads all evidence from SNK.',
+          'Bangkok date and allowed modules are provided alongside the user message.',
+        ].join(' ') }] },
+        contents: [{ role: 'user', parts: [{ text: JSON.stringify({ message: raw, today, allowed_modules: allowed }) }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 120, responseMimeType: 'application/json', responseSchema: schema },
+      }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    const content = (data.candidates?.[0]?.content?.parts ?? []).map(part => part.text ?? '').join('').trim();
+    if (!content) return null;
+    const candidate = JSON.parse(content) as { kind?: string; filter?: string; period?: string };
+    if (!QUERY_KINDS.includes(candidate.kind as typeof QUERY_KINDS[number]) || candidate.kind === 'none') return null;
+    if (!QUERY_FILTERS.includes((candidate.filter ?? 'none') as typeof QUERY_FILTERS[number])
+      || !QUERY_PERIODS.includes((candidate.period ?? 'none') as typeof QUERY_PERIODS[number])) return null;
+    const kind = candidate.kind as Query['kind'];
+    const filter = candidate.filter === 'none' ? undefined : candidate.filter;
+    const period = candidate.period === 'none' ? undefined : candidate.period;
+    let modules: PersonalModule[];
+    if (kind === 'summary') modules = ['personal_summary', 'tasks', 'schedule', 'projects', 'money'];
+    else if (kind === 'tasks') modules = ['tasks'];
+    else if (kind === 'schedule') modules = ['schedule', 'tasks'];
+    else modules = [kind];
+    if (kind === 'tasks' && !['open', 'overdue', 'owner', 'waiting', undefined].includes(filter)) return null;
+    if (kind === 'schedule' && !['today', 'tomorrow', 'week', 'upcoming', undefined].includes(period)) return null;
+    if (kind === 'money' && !['total', 'items', 'categories', 'food', 'recent', 'recent_expense', undefined].includes(filter)) return null;
+    return { kind, modules, ...(filter ? { filter } : {}), ...(period ? { period } : {}) };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 export function personalQuery(raw: string): Query | null {
   const text = normalizeText(raw).replace(/^(?:น้อง)?ทองไทย\s*/u, '').trim();
@@ -33,6 +103,7 @@ export function personalQuery(raw: string): Query | null {
 function periodRange(period: string | undefined, today: string): [string, string] {
   if (period === 'yesterday') { const date = addDays(today, -1); return [date, date]; }
   if (period === 'today') return [today, today];
+  if (period === 'tomorrow') { const date = addDays(today, 1); return [date, date]; }
   if (period === 'last_month') { const last = addDays(today.slice(0, 8) + '01', -1); return [last.slice(0, 8) + '01', last]; }
   return [today.slice(0, 8) + '01', today];
 }
@@ -63,8 +134,8 @@ function moneyLines(data: Row, filter = 'total'): string[] {
 }
 
 /** Every status answer is generated from a fresh owner-scoped SNK RPC, never chat memory. */
-export async function answerPersonalQuery(ledger: PfLedger, raw: string, today: string, allowed: readonly string[], isOwner: boolean): Promise<string | null> {
-  const query = personalQuery(raw);
+export async function answerPersonalQuery(ledger: PfLedger, raw: string, today: string, allowed: readonly string[], isOwner: boolean, interpreter: PersonalQueryInterpreter = geminiPersonalQueryInterpreter): Promise<string | null> {
+  const query = personalQuery(raw) ?? (isOwner ? await interpreter(raw, today, allowed) : null);
   if (!query) return null;
   if (!isOwner && query.modules.some(module => module !== 'money')) return finalizeReply('ข้อมูลส่วนตัวเรื่องนี้ให้เจ้าของกลุ่มเรียกดูได้ครับ');
   if (query.modules.some(module => !allowed.includes(module))) return finalizeReply('กลุ่มนี้ยังไม่ได้เปิดสิทธิ์ดูข้อมูลส่วนตัวหมวดที่ถามครับ');

@@ -10,6 +10,7 @@ export async function personalReadiness(env: Record<string, string | undefined> 
     lineSecretConfigured: Boolean(env.LINE_CHANNEL_SECRET?.trim()),
     replyTokenConfigured: Boolean(env.LINE_CHANNEL_ACCESS_TOKEN?.trim()), encryptionConfigured,
     slipExtractionConfigured: Boolean(env.GEMINI_API_KEY?.trim()),
+    secretaryAiConfigured: Boolean(env.GEMINI_API_KEY?.trim()),
     ledgerReachable: false, migrationPresent: false, moneyReady: false, secretaryReady: false, bindingReady: false, activeGroup: false,
     problem: ''
   };
@@ -26,7 +27,7 @@ export async function personalReadiness(env: Record<string, string | undefined> 
     body.bindingReady = result.binding === true;
     body.activeGroup = result.active_group === true;
     body.ok = body.ledgerReachable && body.migrationPresent && body.moneyReady && body.secretaryReady && body.bindingReady;
-    body.ready = body.ok && body.flagEnabled && body.activeGroup && body.lineSecretConfigured && body.replyTokenConfigured && encryptionConfigured && body.slipExtractionConfigured;
+    body.ready = body.ok && body.flagEnabled && body.activeGroup && body.lineSecretConfigured && body.replyTokenConfigured && encryptionConfigured && body.slipExtractionConfigured && body.secretaryAiConfigured;
     if (!body.ready) body.problem = body.ok ? 'personal_configuration_incomplete' : 'personal_migration_incomplete';
   } catch { body.problem = 'snk_backend_unavailable'; }
   return body;

@@ -35,7 +35,7 @@ import {
   type PfRole,
 } from './_personal-finance-core';
 import { handleCoachText } from './_personal-finance-coach';
-import { answerPersonalQuery, PERSONAL_MODULES } from './_personal-queries';
+import { answerPersonalQuery, PERSONAL_MODULES, type PersonalQueryInterpreter } from './_personal-queries';
 import { handleSecretaryText } from './_personal-secretary';
 import {
   interpret,
@@ -87,6 +87,8 @@ export type PfDeps = {
   /** Optional operator-pinned owner (SNK_MONEY_OWNER_ID); enables the "owner types the phrase" activation path. */
   envOwnerId?: string | null;
   llm: LlmInterpreter | null;
+  /** Optional test/operator override for natural-language personal query classification. */
+  personalQueryInterpreter?: PersonalQueryInterpreter;
   now: () => Date;
   env: Record<string, string | undefined>;
   hash: (value: string) => string | null;
@@ -317,7 +319,7 @@ async function handleText(c: Ctx, text: string, rawText = text): Promise<string 
   if (/(?:ทำมา.?ชาติ|ตำมา.?ชาติ|tamma|อินทนิน|อินทนิล|inthanin|otop|ลูกค้า|ร้านอาหาร)/iu.test(text)) {
     return finalizeReply('เรื่องธุรกิจนี้ให้ถามทองไทยในกลุ่มทำมา-ชาติครับ กลุ่มนี้ใช้ข้อมูลส่วนตัวจาก SNK เท่านั้นครับ');
   }
-  const query = await answerPersonalQuery(ledger, rawText, c.today, c.allowedModules, c.role === 'OWNER');
+  const query = await answerPersonalQuery(ledger, rawText, c.today, c.allowedModules, c.role === 'OWNER', c.deps.personalQueryInterpreter);
   if (query) return query;
   const financeCue = /เงิน|จ่าย|โอน|บัญชี|บาท|สลิป|ยอด|ซื้อ/u.test(text);
   const secretaryCue = /งาน|นัด|เตือน|พรุ่งนี้|วันนี้|เป้าหมาย|เสร็จ|กำหนด/u.test(text);
