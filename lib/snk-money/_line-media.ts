@@ -21,29 +21,35 @@ export async function fetchSnkLineImage(messageId: string): Promise<{ bytes: Buf
 }
 
 export async function extractSnkSlip(bytes: Buffer, mimeType: string): Promise<SlipExtraction> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  // SNK already provisions Gemini for its own AI features. Keep image extraction
+  // inside the personal deployment and do not depend on a separate business key.
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("SNK slip extraction is not configured");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+  const timer = setTimeout(() => controller.abort(), 18_000);
   try {
-    const dataUrl = `data:${mimeType};base64,${bytes.toString("base64")}`;
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: "gpt-5.6-luna",
-        instructions: "Extract only visible facts from this personal payment slip or receipt in Thailand. Never infer purpose or invent values. Buddhist year dates must be converted to Gregorian. Return JSON with document_type (transfer_slip, purchase_receipt, expense_receipt, or other), amount_total, document_date_local (YYYY-MM-DD or null), merchant, reference_number, bank, confidence (0..1).",
-        input: [{ role: "user", content: [{ type: "input_image", image_url: dataUrl }] }],
-        max_output_tokens: 400,
-        reasoning: { effort: "none" },
-        text: { format: { type: "json_schema", name: "snk_slip", strict: false, schema: { type: "object" } } },
-      }),
-    });
-    if (!response.ok) throw new Error(`SNK slip extraction failed ${response.status}`);
-    const payload = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }> };
-    let raw = payload.output_text ?? "";
-    if (!raw) for (const item of payload.output ?? []) for (const part of item.content ?? []) if (part.type === "output_text" && part.text) raw += part.text;
+    const models = process.env.SNK_SLIP_MODEL ? [process.env.SNK_SLIP_MODEL]
+      : ["gemini-3.1-flash-lite", "gemini-2.0-flash-lite", "gemini-flash-lite-latest"];
+    let raw = "";
+    for (const model of models) {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [
+            { text: "Read only visible facts from this Thai payment slip or receipt. Do not infer the expense purpose, source account, or missing values. Convert Buddhist year to Gregorian. Return JSON with document_type (transfer_slip, purchase_receipt, expense_receipt, or other), amount_total as number or null, document_date_local (YYYY-MM-DD or null), merchant (receiver name or null), reference_number, bank (printed bank name or null), confidence (0..1)." },
+            { inline_data: { mime_type: mimeType, data: bytes.toString("base64") } },
+          ] }],
+          generationConfig: { responseMimeType: "application/json", maxOutputTokens: 700, temperature: 0 },
+        }),
+      });
+      if (response.status === 404 && model !== models[models.length - 1]) continue;
+      if (!response.ok) throw new Error(`SNK slip extraction failed ${response.status}`);
+      const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      raw = payload.candidates?.[0]?.content?.parts?.map(part => part.text ?? "").join("") ?? "";
+      break;
+    }
     const parsed = JSON.parse(raw.replace(/^```(?:json)?|```$/g, "").trim()) as Record<string, unknown>;
     const amount = typeof parsed.amount_total === "number" && Number.isFinite(parsed.amount_total) ? parsed.amount_total : null;
     const date = typeof parsed.document_date_local === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.document_date_local) ? parsed.document_date_local : null;

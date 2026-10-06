@@ -90,6 +90,38 @@ test('04b slip that matches a due obligation offers to close it instead of creat
   assert.equal(await h.count('transactions', "type='expense'"), 1);
 });
 
+test('unreadable slip keeps its context: purpose then amount completes one personal transaction', async()=>{
+  const h=await ready({slips:{'receipt-209':'fail'}});
+  try {
+    await say(h,'KBank ตอนนี้ 1000');
+    const image=await h.image('receipt-209');
+    assert.match(image.reply??'',/บอกยอดกับรายการต่อได้เลย/);
+    assert.equal(await h.count('transactions',"type='expense'"),0);
+    const purpose=await say(h,'ค่าข้าวเที่ยง');
+    assert.match(purpose.reply??'',/ค่าข้าวเที่ยง.*ยอดเท่าไร/);
+    assert.equal(await h.count('transactions',"type='expense'"),0);
+    const amount=await say(h,'209');
+    assert.match(amount.reply??'',/ค่าข้าวเที่ยง.*209 บาท.*สลิป/);
+    const rows=await h.db.query<{amount:string;merchant:string;file_hash:string}>("select amount::text amount,merchant,file_hash from transactions where type='expense'");
+    assert.equal(rows.rows.length,1);
+    assert.equal(Number(rows.rows[0].amount),209);
+    assert.equal(rows.rows[0].merchant,'ค่าข้าวเที่ยง');
+    assert.ok(rows.rows[0].file_hash);
+    assert.equal(await h.balanceOf('KBank'),791);
+  }finally{await h.db.close()}
+});
+
+test('unfinished slip never turns a new task into an expense', async()=>{
+  const h=await ready({slips:{'bad-scan':'fail'}});
+  try {
+    await h.image('bad-scan');
+    const task=await say(h,'มีงานใหม่ต้องทำ ต้องอ่านสรุปงาน thesis ภายในพรุ่งนี้');
+    assert.match(task.reply??'',/จัดเข้าระบบแล้ว 1 รายการ/);
+    assert.equal(await h.count('transactions',"type='expense'"),0);
+    assert.equal(await h.count('tasks',"title='อ่านสรุปงาน thesis'"),1);
+  }finally{await h.db.close()}
+});
+
 test('05 "จ่ายแล้ว" resolves the due item, asks the account if unknown, and advances the next due date', async () => {
   const h = await ready();
   await say(h, 'SCB ตอนนี้ 20000');

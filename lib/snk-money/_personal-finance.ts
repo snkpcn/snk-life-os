@@ -930,6 +930,7 @@ async function resolvePending(c: Ctx, text: string, pending: Pending, accounts: 
     }
 
     case 'SLIP': return resolveSlip(c, t, pending, accounts);
+    case 'SLIP_MANUAL': return resolveManualSlip(c, t, pending, accounts);
     default: await clear(); return { done: false, reply: null };
   }
 }
@@ -958,12 +959,14 @@ async function handleImage(c: Ctx): Promise<string | null> {
     ext = await deps.extractSlip(img.bytes, img.mimeType);
   } catch {
     await deps.ledger.logAudit('SLIP_UNREADABLE', 'slip', null, c.actor, c.messageId, { reason: 'extraction_failed' });
-    return reply('อ่านสลิปนี้ไม่สำเร็จครับ ผมยังไม่ได้บันทึกอะไร พิมพ์มาได้เลย เช่น “จ่ายประกัน 18500 จาก SCB”');
+    await deps.ledger.pendingSet(c.actor, 'SLIP_MANUAL', { fileHash: img.sha256, messageId: c.messageId }, 60);
+    return reply('อ่านยอดสลิปนี้ไม่สำเร็จครับ ยังไม่ได้บันทึก บอกยอดกับรายการต่อได้เลย เช่น “ค่าข้าวเที่ยง 209”');
   }
   const reliableAmount = ext.confidence >= 0.7 && ext.amount_total !== null && ext.amount_total > 0 && ['transfer_slip', 'purchase_receipt', 'expense_receipt'].includes(ext.document_type);
   if (!reliableAmount) {
     await deps.ledger.logAudit('SLIP_UNREADABLE', 'slip', null, c.actor, c.messageId, { reason: 'low_confidence', confidence: ext.confidence });
-    return reply('อ่านยอดจากภาพนี้ไม่ชัดพอครับ ผมยังไม่ได้บันทึกอะไร พิมพ์ยอดมาได้เลย เช่น “จ่ายประกัน 18500”');
+    await deps.ledger.pendingSet(c.actor, 'SLIP_MANUAL', { fileHash: img.sha256, messageId: c.messageId }, 60);
+    return reply('อ่านยอดจากภาพนี้ไม่ชัดพอครับ ยังไม่ได้บันทึก บอกยอดกับรายการต่อได้เลย เช่น “ค่าข้าวเที่ยง 209”');
   }
   const amount = ext.amount_total as number;
   const dup = await deps.ledger.findDuplicateSlip({ slipRef: ext.reference_number, amount, date: ext.document_date_local, payee: ext.merchant });
@@ -1022,6 +1025,46 @@ async function resolveSlip(c: Ctx, t: string, pending: Pending, accounts: Ledger
     return done(`บันทึกสลิป ${money(p.amount)}${title ? ` (${title})` : ''} ไว้แล้วครับ ตัดจากบัญชีไหนครับ หรือพิมพ์ “ไม่ระบุ”`);
   }
   return done(`บันทึกสลิป${income ? 'รายรับ' : 'รายจ่าย'} ${money(p.amount)}${title ? ` (${title})` : ''} ${res.account ? `${income ? 'เข้า' : 'จาก'} ${res.account.name} ` : ''}เรียบร้อยครับ${balanceNote(res.account)}`);
+}
+
+async function resolveManualSlip(c: Ctx, t: string, pending: Pending, accounts: LedgerAccount[]): Promise<{ done: boolean; reply: string | null }> {
+  const { ledger } = c.deps;
+  const done = (message: string) => ({ done: true, reply: reply(message) });
+  if (isNo(t) || /^(?:ไม่ต้องบันทึก|ข้าม|ช่างมัน)/u.test(t)) {
+    await ledger.pendingClear(c.actor);
+    return done('รับทราบครับ ไม่บันทึกสลิปนี้');
+  }
+  // A new task or appointment abandons this unfinished slip instead of
+  // treating the new instruction as an expense label.
+  if (/(?:มีงาน|เพิ่มงาน|บันทึกงาน|เตือนให้|นัด|ประชุม)/u.test(t)) return { done: false, reply: null };
+  const p = pending.payload;
+  const amount = extractAmount(t) ?? (typeof p.amount === 'number' ? p.amount : null);
+  const purpose = t.replace(/(?:จาก|ด้วย|ผ่าน|ตัด|เข้า)\s*\S+/gu, ' ')
+    .replace(/\d[\d,]*(?:\.\d+)?\s*(?:บาท|฿)?/gu, ' ')
+    .replace(/^(?:จ่าย|ซื้อ|เป็นค่า)\s*/u, '')
+    .replace(/(?:นะ|ครับ)\s*$/u, '').replace(/\s+/gu, ' ').trim() || p.purpose || null;
+  const hint = accountHintIn(t, accounts) ?? p.accountHint ?? null;
+  if (!amount && !purpose && !hint) return { done: false, reply: null };
+  if (!amount || !purpose) {
+    await ledger.pendingSet(c.actor, 'SLIP_MANUAL', { ...p, amount, purpose, accountHint: hint }, 60);
+    return done(!amount ? `รับว่าเป็น “${purpose}” ครับ สลิปนี้ยอดเท่าไรครับ` : `ยอด ${money(amount)} เป็นค่าอะไรครับ`);
+  }
+  const target = await accountForHint(c, hint, accounts, { create: true, useSingle: true });
+  if (target.kind === 'ambiguous') {
+    await ledger.pendingSet(c.actor, 'SLIP_MANUAL', { ...p, amount, purpose }, 60);
+    return done(`หมายถึงบัญชีไหนครับ: ${target.candidates.map(a => a.name).join(', ')}`);
+  }
+  const res = await ledger.createTransaction({
+    kind: 'EXPENSE', amount, accountId: target.kind === 'one' ? target.account.id : null,
+    category: guessCategory(purpose) ?? purpose.slice(0, 40), payee: purpose, occurredOn: c.today,
+    actor: c.actor, message: c.messageId, idem: `${p.messageId ?? c.messageId}:slip-manual`, fileHash: p.fileHash ?? null,
+  });
+  await ledger.pendingClear(c.actor);
+  if (res.transaction.status === 'PENDING_CLARIFICATION') {
+    await ledger.pendingSet(c.actor, 'ASSIGN_ACCOUNT', { txId: res.transaction.id, messageId: c.messageId }, 60);
+    return done(`บันทึก${purpose} ${money(amount)} จากสลิปแล้วครับ ตัดจากบัญชีไหนครับ หรือพิมพ์ “ไม่ระบุ”`);
+  }
+  return done(`บันทึก${purpose} ${money(amount)} จากสลิปแล้วครับ${res.account ? ` จาก ${res.account.name}` : ''}${balanceNote(res.account)}`);
 }
 
 // ================================================================== production wiring

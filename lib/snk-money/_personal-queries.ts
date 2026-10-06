@@ -14,7 +14,9 @@ export function personalQuery(raw: string): Query | null {
     return { kind: 'summary', modules: ['personal_summary', 'tasks', 'schedule', 'projects', 'money'] };
   }
   if (/(?:โปรเจ[คก](?:ต์)?|โครงการ)ส่วนตัว.*(?:ถึงไหน|เป็นไง|คืบหน้า|มีอะไร)|(?:โปรเจ[คก](?:ต์)?|โครงการ).*ถึงไหน/u.test(text)) return { kind: 'projects', modules: ['projects'] };
-  if (/(?:มีอะไรค้าง|เหลืออะไร|งานไหน|งานอะไร|งานที่|มีงาน|งานค้าง)/u.test(text) && !/(?:เสร็จแล้ว|เพิ่มงาน|บันทึกงาน)/u.test(text)) {
+  // A declaration such as “มีงานใหม่ต้องทำ ต้องอ่าน...” is a write, not a request
+  // to list existing tasks. Keep the query vocabulary limited to questions.
+  if (/(?:มีอะไรค้าง|เหลืออะไร|งานไหน|งานอะไร|งานที่(?:ค้าง|รอ|เลยกำหนด)|งานค้าง|มีงาน(?:ค้าง|อะไร|ไหน|ไหม|หรือเปล่า|ใหม่(?:ไหม|หรือเปล่า))?\s*[?？]?$)/u.test(text) && !/(?:เสร็จแล้ว|เพิ่มงาน|บันทึกงาน)/u.test(text)) {
     return { kind: 'tasks', modules: ['tasks'], filter: /เลยกำหนด|เกินกำหนด/u.test(text) ? 'overdue' : /รอกู|รอผม|รอพี่|รอเรา|รอยืนยัน/u.test(text) ? 'owner' : /รอ|ติดตาม/u.test(text) ? 'waiting' : 'open' };
   }
   if (/^(?:วันนี้|พรุ่งนี้|(?:สัปดาห์|อาทิตย์)นี้)มีอะไร|(?:มีนัดอะไร|มีนัดไหม|(?:วันนี้|พรุ่งนี้|(?:สัปดาห์|อาทิตย์)นี้).*มีนัดอะไร)/u.test(text)) {

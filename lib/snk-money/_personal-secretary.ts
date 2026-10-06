@@ -107,7 +107,7 @@ export function parseSecretaryTime(text: string): string | null {
 
 function stripTemporal(text: string): string {
   return text
-    .replace(/(?:วันนี้|พรุ่งนี้|มะรืน|อาทิตย์นี้|สัปดาห์นี้|อาทิตย์หน้า|สัปดาห์หน้า)/g, ' ')
+    .replace(/(?:ภายใน\s*)?(?:วันนี้|พรุ่งนี้|มะรืน|อาทิตย์นี้|สัปดาห์นี้|อาทิตย์หน้า|สัปดาห์หน้า)/g, ' ')
     .replace(/วันที่\s*\d{1,2}(?:\/\d{1,2}(?:\/\d{2,4})?)?/g, ' ')
     .replace(/\d{1,2}\/\d{1,2}(?:\/\d{2,4})?/g, ' ')
     .replace(/(?:เวลา\s*)?\d{1,2}[.:]\d{2}|บ่าย\s*(?:โมง|\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า)|(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า)\s*ทุ่ม|ตี\s*(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า)|\d{1,2}\s*โมง(?:เช้า)?|เที่ยง(?:ตรง)?/g, ' ');
@@ -116,6 +116,8 @@ function stripTemporal(text: string): string {
 function cleanTitle(text: string, mode: 'normal' | 'finance' | 'followup' = 'normal'): string {
   let t = stripTemporal(normalizeText(text))
     .replace(/^(?:[-•*]|\d+[.)])\s*/, '')
+    .replace(/^(?:มีงาน(?:ใหม่)?ต้องทำ|มีงานใหม่|เพิ่มงาน|บันทึกงาน)\s*[:：-]?\s*/, '')
+    .replace(/^ต้อง(?=(?:อ่าน|ทำ|ส่ง|เขียน|โทร|ติดต่อ|จัด|เตรียม))/, '')
     .replace(/(?:ทุกวันจนกว่า(?:จะ)?เสร็จ|ทุกวันจนเสร็จ|ทุกวัน|ทุกสัปดาห์|ทุกอาทิตย์|ทุกเดือน)/g, ' ')
     .replace(/(?:สำคัญที่สุด|สำคัญสุด|เป็นข้อหนึ่ง|เป็นอันดับหนึ่ง|ไม่รีบ|ทำก่อน|พักไว้ก่อน)/g, ' ')
     .replace(/(?:เตือนก่อน\s*\d+\s*ชั่วโมง)/g, ' ')
@@ -439,7 +441,7 @@ export async function handleSecretaryText(c: SecretaryCtx, raw: string): Promise
     const state = await getSnapshot();
     const resolved = resolveTarget(state, text, 'task');
     if (resolved.target || resolved.ambiguous || resolved.stale) {
-      return updateTask(c, text, state, { state: 'DONE', progress: 100 }, t => `ปิดงาน “${t.title}” แล้วครับ และหยุดการติดตามอัตโนมัติแล้ว`);
+      return updateTask(c, text, state, { state: 'DONE', progress: 100 }, t => `ปิดงาน “${t.title}” แล้วครับ`);
     }
     return null;
   }
