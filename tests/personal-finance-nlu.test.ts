@@ -35,6 +35,18 @@ test('negations and vague text never become writes', () => {
   assert.equal(kind('สวัสดีครับ').kind, 'UNCLEAR');
   assert.equal((kind('สวัสดีครับ') as any).financeCue, false);
   assert.equal(kind('ลบทั้งหมด').kind, 'UNSUPPORTED_BULK');
+  assert.equal(kind('ลบทุกบัญชีก่อน').kind, 'UNSUPPORTED_BULK');
+});
+
+test('bank balance statement resolves by institution even when account names are identical', () => {
+  const ownerAccounts = [
+    { id: 'kasikorn-id', name: 'ชานนท์ ปรีชานันท์', institution: 'kasikorn', balance: null, balance_status: 'UNKNOWN' as const },
+    { id: 'scb-id', name: 'ชานนท์ ปรีชานันท์', institution: 'SCB', balance: null, balance_status: 'UNKNOWN' as const },
+  ];
+  const intent = interpretWithRules('บัญชี กสิกร มี 45 บาท', { ...ctx, accounts: ownerAccounts }).intent as any;
+  assert.equal(intent.kind, 'SET_BALANCE');
+  assert.equal(intent.amount, 45);
+  assert.equal(intent.accountHint, 'kasikorn');
 });
 
 test('"ใช้จ่าย" inside an account name is not an expense verb', () => {
