@@ -38,8 +38,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-3xl pb-28">
-      <header className="safe-top sticky top-0 z-40 flex items-center justify-between border-b border-line bg-bg/90 px-4 py-3 backdrop-blur">
+    <div className={`mx-auto min-h-screen pb-28 ${pathname === "/" ? "max-w-7xl" : "max-w-3xl"}`}>
+      <header className={`safe-top sticky top-0 z-40 flex items-center justify-between border-b px-4 py-3 backdrop-blur ${pathname === "/" ? "border-[#292722] bg-[#08090a]/90" : "border-line bg-bg/90"}`}>
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[0.19em] text-gold">{t("common.tagline")}</div>
           <div className="text-xl font-extrabold tracking-tight">{t("common.appName")}</div>
@@ -65,7 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main className="px-4 py-4">{children}</main>
 
-      <nav className="safe-bottom fixed bottom-3 left-1/2 z-40 flex w-[min(560px,calc(100%-24px))] -translate-x-1/2 gap-1 rounded-3xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur">
+      <nav className={`safe-bottom fixed bottom-3 left-1/2 z-40 flex w-[min(560px,calc(100%-24px))] -translate-x-1/2 gap-1 rounded-3xl border p-1.5 shadow-2xl backdrop-blur ${pathname === "/" ? "border-[#292722] bg-[#111213]/95" : "border-line bg-panel/95"}`}>
         {PRIMARY_NAV.map((item) => {
           const active = pathname === item.href;
           return (
