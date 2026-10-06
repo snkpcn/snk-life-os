@@ -70,12 +70,17 @@ export function createStarkBackend(input:{owner:string;actor:string;messageId:st
     }
     return rows(resource,args);
   }
-  const fields:Record<string,string[]>={tasks:['title','due_date','due_time','priority','state','progress','next_action','blocker','waiting_for'],schedule:['title','start_at','end_at','location','notes','reminder_at','status'],goals:['title','description','level','status','current_value','target_value','unit','deadline','priority','notes'],projects:['name','description','status','due_date','priority','next_action','blocker','explicit_progress','notes'],notes:['title','content']};
+  const fields:Record<string,string[]>={tasks:['title','due_date','due_time','priority','state','progress','next_action','blocker','waiting_for','recurrence'],schedule:['title','start_at','end_at','location','notes','reminder_at','status','recurrence'],goals:['title','description','level','status','current_value','target_value','unit','deadline','priority','notes'],projects:['name','description','status','due_date','priority','next_action','blocker','explicit_progress','notes'],notes:['title','content']};
   function validate(resource:string,data:Json,creating:boolean):Json{
     permit(resource);const allowed=fields[resource];if(!allowed||!data||Array.isArray(data)||typeof data!=='object')throw new Error('invalid_record');
     if(Object.keys(data).some(k=>!allowed.includes(k)))throw new Error('field_not_allowed');
     const out={...data};
     for(const[k,v]of Object.entries(out)){
+      if(k==='recurrence'){
+        if(v===null)continue;
+        if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).some(key=>!['freq','interval'].includes(key))||!['daily','weekly','monthly'].includes(v.freq)||!Number.isInteger(v.interval??1)||(v.interval??1)<1||(v.interval??1)>12)throw new Error('invalid_recurrence');
+        out[k]={freq:v.freq,interval:v.interval??1};continue;
+      }
       if(v!==null&&typeof v!=='string'&&typeof v!=='number')throw new Error('invalid_value');
       if(typeof v==='string'&&(v.length>2000||/[\u0000]/u.test(v)))throw new Error('invalid_value');
       if(typeof v==='number'&&!Number.isFinite(v))throw new Error('invalid_value');
@@ -103,8 +108,9 @@ export function createStarkBackend(input:{owner:string;actor:string;messageId:st
         if(resource==='schedule'&&vetted.end_at&&Date.parse(vetted.end_at)<Date.parse(vetted.start_at))throw new Error('invalid_end_time');
         if(resource==='tasks'&&(vetted.progress!==undefined||(vetted.state&&!['OPEN','WAITING'].includes(vetted.state))))throw new Error('create_open_task_then_update');
         if(resource==='schedule'&&vetted.status&&vetted.status!=='scheduled')throw new Error('create_scheduled_event_then_update');
-        const result=await ledger.secretaryApplyBatch([{...vetted,kind:resource==='tasks'?(vetted.state==='WAITING'?'WAITING':'TASK'):'CALENDAR_EVENT'}],input.actor,input.messageId,key,input.today);
-        return{...result,label:vetted.title,delivery_enabled:false,reminder_note:vetted.reminder_at?'Calendar saved; automatic notifications are not enabled.':undefined};
+        const kind=resource==='tasks'?(vetted.recurrence?'RECURRING_TASK':vetted.state==='WAITING'?'WAITING':'TASK'):'CALENDAR_EVENT';
+        const result=await ledger.secretaryApplyBatch([{...vetted,kind}],input.actor,input.messageId,key,input.today);
+        return{...result,label:vetted.title,delivery_enabled:false,reminder_note:vetted.reminder_at?'Calendar saved; automatic notifications are not enabled.':undefined,recurring_note:vetted.recurrence?'Recurring SNK record saved; automatic LINE notifications are not enabled.':undefined};
       }
       if(resource==='goals'&&!vetted.level)vetted.level='quarter';
       if(resource==='projects'&&!vetted.status)vetted.status='active';
