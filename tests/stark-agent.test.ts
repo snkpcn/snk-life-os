@@ -36,6 +36,21 @@ test('Gemini transport uses function calling and preserves thought signatures',a
  globalThis.fetch=async(_,init)=>{const payload=JSON.parse(String(init?.body));assert.equal(payload.toolConfig.functionCallingConfig.mode,'AUTO');assert.equal(payload.tools[0].functionDeclarations[0].name,'read_os');assert.ok(!String(init?.body).includes('test-secret'));return new Response(JSON.stringify({candidates:[{content:{parts:[{functionCall:{name:'read_os',args:{resource:'money'}},thoughtSignature:'keep-me'}]}}]}));};
  try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'เงิน'}]}],[{name:'read_os'}],1000);assert.equal(parts[0].thoughtSignature,'keep-me');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;}
 });
+test('Gemini retries transient 503 before any tools run, then returns the successful function call',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test-secret';let calls=0;
+ globalThis.fetch=async()=>{
+  calls++;
+  if(calls===1)return new Response('overloaded',{status:503,headers:{'retry-after':'0'}});
+  const payload={candidates:[{content:{parts:[{functionCall:{name:'create_record',args:{resource:'tasks',data:{title:'เซ็นสัญญา'}}}}]}}]};
+  return new Response(JSON.stringify(payload));
+ };
+ try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'เพิ่มงาน'}]}],[{name:'create_record'}],3000);assert.equal(calls,2);assert.equal(parts[0].functionCall?.name,'create_record');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;}
+});
+test('Gemini stops after bounded transient retries and returns the actual 503 code',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test-secret';let calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response('overloaded',{status:503,headers:{'retry-after':'0'}});};
+ try{await assert.rejects(geminiStarkModel('test',[{role:'user',parts:[{text:'สรุปมา'}]}],[],3000),/gemini_http_503/);assert.equal(calls,3);}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;}
+});
 test('real SQL writes, idempotence, cross-owner isolation, context isolation and service-only grants',async()=>{
  const{db,rpc,ledger,owner}=await freshDb();
  try{
