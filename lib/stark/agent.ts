@@ -32,11 +32,31 @@ export const geminiStarkModel: StarkModel = async (system,contents,tools,timeout
   const key=process.env.GEMINI_API_KEY; if(!key) throw new Error('gemini_not_configured');
   const model=process.env.STARK_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
   if(!/^[a-zA-Z0-9.-]+$/.test(model)) throw new Error('invalid_model');
-  const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
-    method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},signal:AbortSignal.timeout(timeout),
-    body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,tools:[{functionDeclarations:tools}],toolConfig:{functionCallingConfig:{mode:'AUTO'}},generationConfig:{temperature:0.3,maxOutputTokens:1200}})
-  });
-  if(!response.ok) throw new Error(`gemini_http_${response.status}`);
+  const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const body=JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,tools:[{functionDeclarations:tools}],toolConfig:{functionCallingConfig:{mode:'AUTO'}},generationConfig:{temperature:0.3,maxOutputTokens:1200}});
+  const started=Date.now();let attempt=0;let response:Response;
+  while(true){
+    const remaining=timeout-(Date.now()-started);
+    if(remaining<=0)throw new Error('gemini_timeout');
+    try{
+      response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},signal:AbortSignal.timeout(remaining),body});
+    }catch(error){
+      if(attempt>=1||Date.now()-started>=timeout-100)throw error;
+      attempt++;
+      await new Promise(resolve=>setTimeout(resolve,Math.min(250,Math.max(0,timeout-(Date.now()-started)-100))));
+      continue;
+    }
+    if(response.ok)break;
+    // Gemini may briefly shed load with 5xx responses. A bounded retry is safe
+    // here because generateContent has not executed any SNK tool or mutation.
+    if([500,502,503,504].includes(response.status)&&attempt<2){
+      const retryAfter=response.headers.get('retry-after');
+      const seconds=retryAfter&&/^\d+(?:\.\d+)?$/.test(retryAfter)?Number(retryAfter):0;
+      const delay=Math.min(1000,seconds>0?seconds*1000:250*(2**attempt));
+      if(Date.now()-started+delay<timeout-100){attempt++;await new Promise(resolve=>setTimeout(resolve,delay));continue;}
+    }
+    throw new Error(`gemini_http_${response.status}`);
+  }
   const data=await response.json(); const candidate=data.candidates?.[0];
   if(!Array.isArray(candidate?.content?.parts)||!candidate.content.parts.length) throw new Error('gemini_no_response');
   // Preserve all returned parts, including thought signatures, for subsequent function calls.
