@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createHmac, randomBytes } from 'node:crypto';
 import { harness, GROUP, OWNER, OTHER_GROUP } from './helpers/pf-harness';
 import { OWNER_ID, ids, A } from './helpers/pf-pglite';
-import { geminiPersonalQueryInterpreter, personalQuery } from '../lib/snk-money/_personal-queries';
+import { geminiPersonalRequestInterpreter, personalQuery } from '../lib/snk-money/_personal-queries';
 import { personalReadiness } from '../lib/snk-money/readiness';
 import { SNK_OS_DEFAULT_URL, supabaseRpc } from '../lib/snk-money/_personal-finance-ledger';
 import { replyToLine } from '../lib/snk-money/line-reply';
@@ -24,11 +24,11 @@ test('natural personal commands resolve the requested modules without requiring 
 });
 
 test('an AI-understood Thai paraphrase reads the requested facts from owner-scoped SNK RPC data', async()=>{
-  const h=await harness({personalQueryInterpreter:async(message,today,allowed)=>{
+  const h=await harness({personalRequestInterpreter:async(message,today,allowed)=>{
     assert.equal(message,'คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง');
     assert.equal(today,'2026-10-05');
     assert.ok(allowed.includes('tasks'));
-    return {kind:'tasks',modules:['tasks'],filter:'open'};
+    return {action:'query',query:{kind:'tasks',modules:['tasks'],filter:'open'}};
   }});
   try{
     await h.activate();
@@ -42,7 +42,7 @@ test('an AI-understood Thai paraphrase reads the requested facts from owner-scop
   }finally{await h.db.close()}
 });
 
-test('Gemini query adapter uses the selected model and receives no backend rows',async()=>{
+test('Gemini task-action adapter uses the selected model and receives no backend rows',async()=>{
   const oldKey=process.env.GEMINI_API_KEY;const oldFetch=globalThis.fetch;
   process.env.GEMINI_API_KEY='test-key';
   try{
@@ -50,12 +50,12 @@ test('Gemini query adapter uses the selected model and receives no backend rows'
       assert.match(String(input),/models\/gemini-3\.1-flash-lite:generateContent/);
       const body=JSON.parse(init.body);
       assert.equal(body.generationConfig.responseMimeType,'application/json');
-      assert.equal(body.contents[0].parts[0].text,JSON.stringify({message:'คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง',today:'2026-10-05',allowed_modules:['tasks']}));
+      assert.equal(body.contents[0].parts[0].text,JSON.stringify({message:'ลบเพิ่มทองไทยออก',today:'2026-10-05',allowed_modules:['tasks']}));
       assert.doesNotMatch(init.body,/TAMMA_SECRET|OWNER_ID|transaction_rows/);
-      return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({kind:'tasks',filter:'open',period:'none'})}]}}]}),{status:200});
+      return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({action:'cancel_task',kind:'none',filter:'none',period:'none',title_hint:'เพิ่มทองไทย',due_date:''})}]}}]}),{status:200});
     }) as typeof fetch;
-    const query=await geminiPersonalQueryInterpreter('คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง','2026-10-05',['tasks']);
-    assert.deepEqual(query,{kind:'tasks',modules:['tasks'],filter:'open'});
+    const request=await geminiPersonalRequestInterpreter('ลบเพิ่มทองไทยออก','2026-10-05',['tasks']);
+    assert.deepEqual(request,{action:'cancel_task',title_hint:'เพิ่มทองไทย'});
   }finally{
     globalThis.fetch=oldFetch;
     if(oldKey===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=oldKey;
@@ -63,7 +63,7 @@ test('Gemini query adapter uses the selected model and receives no backend rows'
 });
 
 test('AI-selected modules still pass the group allowlist before any SNK data query',async()=>{
-  const h=await harness({personalQueryInterpreter:async()=>({kind:'tasks',modules:['tasks'],filter:'open'})});
+  const h=await harness({personalRequestInterpreter:async()=>({action:'query',query:{kind:'tasks',modules:['tasks'],filter:'open'}})});
   try{
     await h.activate();
     await h.db.query("update finance_channel_bindings set allowed_modules=array['money'] where status='ACTIVE'");
@@ -72,6 +72,22 @@ test('AI-selected modules still pass the group allowlist before any SNK data que
     const answer=await h.say('คืนนี้มีเรื่องไหนที่ยังค้างให้กูจัดการบ้าง');
     assert.match(answer.reply??'',/ยังไม่ได้เปิดสิทธิ์/);
     assert.ok(!calls.includes('snk_personal_snapshot'));
+  }finally{await h.db.close()}
+});
+
+test('natural Thai task cancellation resolves a current SNK task and removes it from open tasks',async()=>{
+  const h=await harness({personalRequestInterpreter:async message=>message==='ลบเพิ่มทองไทยออก'
+    ? {action:'cancel_task',title_hint:'เพิ่มทองไทย'} : {action:'none'}});
+  try{
+    await h.activate();
+    const created=await h.say('มีงานใหม่ต้องทำ เพิ่มทองไทย');
+    assert.match(created.reply??'',/จัดเข้าระบบแล้ว/);
+    const removed=await h.say('ลบเพิ่มทองไทยออก');
+    assert.match(removed.reply??'',/เอา “เพิ่มทองไทย” ออกจากรายการงานค้าง/);
+    const rows=await h.db.query<{secretary_state:string;archived_at:string|null}>("select secretary_state,archived_at::text archived_at from tasks where title='เพิ่มทองไทย'");
+    assert.equal(rows.rows[0]?.secretary_state,'CANCELLED');
+    assert.ok(rows.rows[0]?.archived_at);
+    assert.doesNotMatch((await h.say('มีอะไรค้าง')).reply??'',/เพิ่มทองไทย/);
   }finally{await h.db.close()}
 });
 

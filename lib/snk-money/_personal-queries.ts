@@ -6,7 +6,14 @@ export const PERSONAL_MODULES = ['money', 'tasks', 'schedule', 'projects', 'note
 export type PersonalModule = typeof PERSONAL_MODULES[number];
 type Row = Record<string, any>;
 export type PersonalQuery = { kind: 'summary' | 'tasks' | 'schedule' | 'projects' | 'money' | 'notes'; modules: PersonalModule[]; filter?: string; period?: string };
-export type PersonalQueryInterpreter = (raw: string, today: string, allowed: readonly string[]) => Promise<PersonalQuery | null>;
+export type PersonalRequest =
+  | { action: 'query'; query: PersonalQuery }
+  | { action: 'cancel_task'; title_hint: string }
+  | { action: 'complete_task'; title_hint: string }
+  | { action: 'reschedule_task'; title_hint: string; due_date: string }
+  | { action: 'clarify_task_change' }
+  | { action: 'none' };
+export type PersonalRequestInterpreter = (raw: string, today: string, allowed: readonly string[]) => Promise<PersonalRequest | null>;
 type Query = PersonalQuery;
 
 const QUERY_KINDS = ['summary', 'tasks', 'schedule', 'projects', 'money', 'notes', 'none'] as const;
@@ -15,7 +22,7 @@ const QUERY_PERIODS = ['today', 'tomorrow', 'week', 'upcoming', 'month', 'yester
 
 /** Gemini understands open Thai phrasing. It proposes a small, validated SNK query;
  * it never receives ledger rows and cannot issue SQL or pick an owner. */
-export const geminiPersonalQueryInterpreter: PersonalQueryInterpreter = async (raw, today, allowed) => {
+export const geminiPersonalRequestInterpreter: PersonalRequestInterpreter = async (raw, today, allowed) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || !raw.trim() || raw.length > 1000) return null;
   const controller = new AbortController();
@@ -23,12 +30,15 @@ export const geminiPersonalQueryInterpreter: PersonalQueryInterpreter = async (r
   const schema = {
     type: 'OBJECT',
     properties: {
+      action: { type: 'STRING', enum: ['query', 'cancel_task', 'complete_task', 'reschedule_task', 'clarify_task_change', 'none'] },
       kind: { type: 'STRING', enum: [...QUERY_KINDS] },
       filter: { type: 'STRING', enum: [...QUERY_FILTERS] },
       period: { type: 'STRING', enum: [...QUERY_PERIODS] },
+      title_hint: { type: 'STRING' },
+      due_date: { type: 'STRING' },
     },
-    required: ['kind', 'filter', 'period'],
-    propertyOrdering: ['kind', 'filter', 'period'],
+    required: ['action', 'kind', 'filter', 'period', 'title_hint', 'due_date'],
+    propertyOrdering: ['action', 'kind', 'filter', 'period', 'title_hint', 'due_date'],
   };
   try {
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent', {
@@ -38,12 +48,14 @@ export const geminiPersonalQueryInterpreter: PersonalQueryInterpreter = async (r
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: [
           'Interpret one message from the owner in a private personal secretary chat.',
-          'Decide whether it asks to READ current personal SNK Life OS data. Never classify business/customer/Tamma requests as personal.',
+          'Understand whether it asks to READ personal SNK data or clearly change an existing personal task. Never classify business/customer/Tamma requests as personal.',
           'Understand natural Thai, paraphrases, pronouns and casual wording. Do not require fixed command phrases.',
-          'Return only the schema. Use kind=none for conversation, task creation/update, finance recording, business requests, or unclear intent.',
+          'For reading use action=query and the query fields. For a clear request to remove/cancel a task use cancel_task; to mark done use complete_task; to move its due date use reschedule_task with a Bangkok YYYY-MM-DD date. Extract title_hint from the task named in the message.',
+          'Use clarify_task_change when the owner clearly wants to edit a task but has not said which task or what change. Never guess a task or the intended change.',
+          'Use action=none for ordinary conversation, task creation (the existing secretary handles that), finance writes, business requests, or unclear intent.',
           'Supported read kinds: summary, tasks (open/overdue/owner/waiting), schedule (today/tomorrow/week/upcoming), projects, notes, money (total/items/categories/food/recent/recent_expense).',
           'Use the supplied Bangkok date to resolve relative periods. If the user says this month, period=month. Money default period=month; other kinds use their natural default.',
-          'Use only modules listed as allowed. This model selects a query type only; the server checks permissions and loads all evidence from SNK.',
+          'This model proposes intent only; the server checks permissions, resolves task names against current SNK rows, and loads any query evidence from SNK.',
           'Bangkok date and allowed modules are provided alongside the user message.',
         ].join(' ') }] },
         contents: [{ role: 'user', parts: [{ text: JSON.stringify({ message: raw, today, allowed_modules: allowed }) }] }],
@@ -54,7 +66,22 @@ export const geminiPersonalQueryInterpreter: PersonalQueryInterpreter = async (r
     const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const content = (data.candidates?.[0]?.content?.parts ?? []).map(part => part.text ?? '').join('').trim();
     if (!content) return null;
-    const candidate = JSON.parse(content) as { kind?: string; filter?: string; period?: string };
+    const candidate = JSON.parse(content) as { action?: string; kind?: string; filter?: string; period?: string; title_hint?: string; due_date?: string };
+    if (candidate.action === 'none') return { action: 'none' };
+    if (candidate.action === 'clarify_task_change') return { action: 'clarify_task_change' };
+    if (['cancel_task', 'complete_task'].includes(candidate.action ?? '')) {
+      const title_hint = (candidate.title_hint ?? '').trim().slice(0, 120);
+      if (!title_hint) return { action: 'clarify_task_change' };
+      return candidate.action === 'cancel_task' ? { action: 'cancel_task', title_hint } : { action: 'complete_task', title_hint };
+    }
+    if (candidate.action === 'reschedule_task') {
+      const title_hint = (candidate.title_hint ?? '').trim().slice(0, 120);
+      const due_date = candidate.due_date ?? '';
+      if (!title_hint) return { action: 'clarify_task_change' };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(due_date) || new Date(`${due_date}T00:00:00Z`).toISOString().slice(0, 10) !== due_date) return { action: 'clarify_task_change' };
+      return { action: 'reschedule_task', title_hint, due_date };
+    }
+    if (candidate.action !== 'query') return null;
     if (!QUERY_KINDS.includes(candidate.kind as typeof QUERY_KINDS[number]) || candidate.kind === 'none') return null;
     if (!QUERY_FILTERS.includes((candidate.filter ?? 'none') as typeof QUERY_FILTERS[number])
       || !QUERY_PERIODS.includes((candidate.period ?? 'none') as typeof QUERY_PERIODS[number])) return null;
@@ -69,13 +96,21 @@ export const geminiPersonalQueryInterpreter: PersonalQueryInterpreter = async (r
     if (kind === 'tasks' && !['open', 'overdue', 'owner', 'waiting', undefined].includes(filter)) return null;
     if (kind === 'schedule' && !['today', 'tomorrow', 'week', 'upcoming', undefined].includes(period)) return null;
     if (kind === 'money' && !['total', 'items', 'categories', 'food', 'recent', 'recent_expense', undefined].includes(filter)) return null;
-    return { kind, modules, ...(filter ? { filter } : {}), ...(period ? { period } : {}) };
+    return { action: 'query', query: { kind, modules, ...(filter ? { filter } : {}), ...(period ? { period } : {}) } };
   } catch {
     return null;
   } finally {
     clearTimeout(timer);
   }
 };
+
+/** Resolve common requests locally. Gemini is used only for unfamiliar wording. */
+export async function understandPersonalRequest(raw: string, today: string, allowed: readonly string[], isOwner: boolean, interpreter: PersonalRequestInterpreter = geminiPersonalRequestInterpreter): Promise<PersonalRequest | null> {
+  const known = personalQuery(raw);
+  if (known) return { action: 'query', query: known };
+  if (!isOwner) return null;
+  return interpreter(raw, today, allowed);
+}
 
 export function personalQuery(raw: string): Query | null {
   const text = normalizeText(raw).replace(/^(?:น้อง)?ทองไทย\s*/u, '').trim();
@@ -134,8 +169,8 @@ function moneyLines(data: Row, filter = 'total'): string[] {
 }
 
 /** Every status answer is generated from a fresh owner-scoped SNK RPC, never chat memory. */
-export async function answerPersonalQuery(ledger: PfLedger, raw: string, today: string, allowed: readonly string[], isOwner: boolean, interpreter: PersonalQueryInterpreter = geminiPersonalQueryInterpreter): Promise<string | null> {
-  const query = personalQuery(raw) ?? (isOwner ? await interpreter(raw, today, allowed) : null);
+export async function answerPersonalQuery(ledger: PfLedger, raw: string, today: string, allowed: readonly string[], isOwner: boolean, queryOverride?: PersonalQuery | null): Promise<string | null> {
+  const query = queryOverride === undefined ? personalQuery(raw) : queryOverride;
   if (!query) return null;
   if (!isOwner && query.modules.some(module => module !== 'money')) return finalizeReply('ข้อมูลส่วนตัวเรื่องนี้ให้เจ้าของกลุ่มเรียกดูได้ครับ');
   if (query.modules.some(module => !allowed.includes(module))) return finalizeReply('กลุ่มนี้ยังไม่ได้เปิดสิทธิ์ดูข้อมูลส่วนตัวหมวดที่ถามครับ');
