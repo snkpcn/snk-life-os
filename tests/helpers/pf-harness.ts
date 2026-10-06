@@ -7,7 +7,7 @@ import {
   type SlipExtraction,
 } from '../../lib/snk-money/_personal-finance';
 import type { LlmInterpreter } from '../../lib/snk-money/_personal-finance-nlu';
-import type { PersonalQueryInterpreter } from '../../lib/snk-money/_personal-queries';
+import type { PersonalRequestInterpreter } from '../../lib/snk-money/_personal-queries';
 import { freshDb } from './pf-pglite';
 
 export const OWNER = 'U_owner_000000000000000000000001';
@@ -24,7 +24,7 @@ export type Harness = Awaited<ReturnType<typeof harness>>;
 
 export async function harness(opts: {
   llm?: LlmInterpreter | null;
-  personalQueryInterpreter?: PersonalQueryInterpreter;
+  personalRequestInterpreter?: PersonalRequestInterpreter;
   businessBound?: string[];
   slips?: Record<string, SlipExtraction | 'fail'>;
   images?: Record<string, string>;
@@ -43,7 +43,7 @@ export async function harness(opts: {
     rpc,
     envOwnerId: opts.pinnedOwner === false ? null : owner,
     llm: opts.llm ?? null,
-    personalQueryInterpreter: opts.personalQueryInterpreter,
+    personalRequestInterpreter: opts.personalRequestInterpreter,
     now: () => NOW,
     env: opts.env ?? (opts.pinnedOwner === false ? {} : { PF_OWNER_LINE_USER_IDS: OWNER, PF_FINANCE_MEMBER_LINE_USER_IDS: MEMBER }),
     hash: v => sha(v.trim().toLowerCase()),

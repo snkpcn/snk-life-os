@@ -31,6 +31,11 @@ export type SecretaryCtx = {
 };
 
 export type SecretaryOutcome = { reply: string } | null;
+export type NaturalTaskAction =
+  | { action: 'cancel_task'; title_hint: string }
+  | { action: 'complete_task'; title_hint: string }
+  | { action: 'reschedule_task'; title_hint: string; due_date: string }
+  | { action: 'clarify_task_change' };
 
 const THAI_NUMBER: Record<string, number> = {
   ศูนย์: 0, หนึ่ง: 1, แรก: 1, สอง: 2, สาม: 3, สี่: 4, ห้า: 5,
@@ -385,6 +390,32 @@ async function updateTask(c: SecretaryCtx, text: string, snapshot: Json, patch: 
   return { reply: finalizeReply(success(resolved.target)) };
 }
 
+/** Apply an AI-understood task change only after resolving its title against a fresh SNK snapshot. */
+export async function handleNaturalTaskAction(c: SecretaryCtx, action: NaturalTaskAction): Promise<SecretaryOutcome> {
+  if (action.action === 'clarify_task_change') return { reply: finalizeReply('ได้ครับ อยากแก้งานรายการไหน และให้เปลี่ยนเป็นอะไรครับ ผมยังไม่ได้แก้ข้อมูล') };
+  const snapshot = await c.ledger.secretarySnapshot(c.actor, c.today);
+  const resolved = resolveTarget(snapshot, action.title_hint, 'task');
+  if (!resolved.target) {
+    if (resolved.ambiguous?.length) return { reply: finalizeReply(`มีหลายงานที่ชื่อใกล้กันครับ หมายถึง “${resolved.ambiguous.slice(0, 4).map(task => task.title).join('” หรือ “')}” งานไหนครับ ผมยังไม่ได้เปลี่ยนอะไร`) };
+    return { reply: finalizeReply('ผมหางานชื่อนี้ใน SNK ไม่เจอครับ ช่วยบอกชื่องานให้ตรงอีกนิด ผมยังไม่ได้เปลี่ยนอะไร') };
+  }
+  const task = resolved.target;
+  let patch: Json;
+  if (action.action === 'cancel_task') patch = { state: 'CANCELLED' };
+  else if (action.action === 'complete_task') patch = { state: 'DONE', progress: 100 };
+  else {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(action.due_date) || new Date(`${action.due_date}T00:00:00Z`).toISOString().slice(0, 10) !== action.due_date) {
+      return { reply: finalizeReply('วันใหม่ไม่ชัดครับ ช่วยบอกวันที่อีกครั้ง ผมยังไม่ได้เลื่อนงาน') };
+    }
+    patch = { state: 'OPEN', due_date: action.due_date };
+  }
+  const result = await c.ledger.secretaryUpdateTask(task.id, patch, c.actor, c.messageId, `${c.messageId}:task:${task.id}`);
+  if (!result.ok) return { reply: finalizeReply('อัปเดตงานใน SNK ไม่สำเร็จครับ ผมยังไม่ได้เปลี่ยนข้อมูล') };
+  if (action.action === 'cancel_task') return { reply: finalizeReply(`เอา “${task.title}” ออกจากรายการงานค้างแล้วครับ`) };
+  if (action.action === 'complete_task') return { reply: finalizeReply(`ปิดงาน “${task.title}” แล้วครับ`) };
+  return { reply: finalizeReply(`เลื่อนกำหนด “${task.title}” เป็น ${thaiDate(action.due_date)} แล้วครับ`) };
+}
+
 function uniqueResults(items: Array<{ kind: string; id: string; title: string; created: boolean }>): Array<{ kind: string; id: string; title: string; created: boolean }> {
   const map = new Map<string, { kind: string; id: string; title: string; created: boolean }>();
   for (const item of items) map.set(item.id, map.has(item.id) ? { ...map.get(item.id)!, created: map.get(item.id)!.created || item.created } : item);
@@ -400,11 +431,14 @@ export async function handleSecretaryText(c: SecretaryCtx, raw: string): Promise
     || (/^(?:ไม่ต้อง|เลิก|หยุด|ปิด)เตือน/u.test(text) && !/งาน|นัด|ทุกวัน/u.test(text))) return null;
   const lines = raw.split(/\r?\n/).filter(x => x.trim());
   const dateTaskSyntax = /^(?:วันนี้|พรุ่งนี้|มะรืน)\s*[-–—:：]\s*\S/.test(raw.trim());
-  const hasCue = lines.length > 1 || dateTaskSyntax || /(?:เตือน|งาน|นัด|ประชุม|เดดไลน์|กำหนดส่ง|เป้าหมาย|เสร็จ|จบแล้ว|ผ่านแล้ว|สำคัญ|ไม่รีบ|พรุ่งนี้ค่อย|พักไว้|รอ|ติด|ทุกวันจน|เตือน.*ทุกวัน|เหลือ\s+\S+|\d{1,3}\s*%|(?:ข้อมูล|ผล|คำตอบ|อนุมัติ).*(?:มาแล้ว|ได้แล้ว)|(?:คนอื่น|ทีม|ช่าง).*(?:ส่งกลับ|ตอบกลับ|เสร็จแล้ว))/i.test(text);
+  const broadDelete = /^(?:ลบ|เอาออก|ล้าง|ยกเลิก)\s*(?:ทั้งหมด|ทุกอย่าง|ทุกรายการ|รายการทั้งหมด|ทุกงาน|ทุกงานที่ค้าง)/u.test(text);
+  const financialBulkDelete = /(?:ลบ|ล้าง|ยกเลิก).*(?:รายการทั้งหมด|ทั้งหมด.*(?:เดือน|สัปดาห์|วัน)|ทุก(?:รายการ|อย่าง).*(?:เดือน|สัปดาห์|วัน))/u.test(text);
+  const taskRemoval = /^(?:ลบ|เอาออก)/u.test(text) && !broadDelete && !financialBulkDelete && !/(?:รายจ่าย|รายรับ|รายการเงิน|ธุรกรรม|เงิน|จ่าย|โอน|ยอด|บัญชี|ค่า[ก-๙]+|อาหาร|ซื้อ)/u.test(text);
+  const hasCue = lines.length > 1 || dateTaskSyntax || taskRemoval || /(?:เตือน|งาน|นัด|ประชุม|เดดไลน์|กำหนดส่ง|เป้าหมาย|เสร็จ|จบแล้ว|ผ่านแล้ว|สำคัญ|ไม่รีบ|พรุ่งนี้ค่อย|พักไว้|รอ|ติด|ทุกวันจน|เตือน.*ทุกวัน|เหลือ\s+\S+|\d{1,3}\s*%|(?:ข้อมูล|ผล|คำตอบ|อนุมัติ).*(?:มาแล้ว|ได้แล้ว)|(?:คนอื่น|ทีม|ช่าง).*(?:ส่งกลับ|ตอบกลับ|เสร็จแล้ว))/i.test(text);
   const looksLikeBalance = /(?:ยอด)?จริง(?:ๆ)?\s*(?:เหลือ|คือ|อยู่ที่|เป็น)\s*[\d๐-๙,]+/.test(text)
     || (Boolean(knownAccountFromText(text)) && /(?:ยอด|เหลือ|คงเหลือ)\s*[\d๐-๙,]+/.test(text))
     || /^(?:(?:ตอนนี้|ยอด(?:คงเหลือ)?|คงเหลือ)\s*)?(?:เหลือ\s*)?[\d๐-๙][\d๐-๙,]*(?:\s*(?:บาท|฿))?$/.test(text);
-  if (!hasCue || looksLikeBalance || (FINANCE_WORD.test(text) && !/(?:วันที่|กำหนด|งาน|นัด|เตือน.*ทุกวัน)/.test(text))) return null;
+  if (!hasCue || broadDelete || financialBulkDelete || looksLikeBalance || (FINANCE_WORD.test(text) && !/(?:วันที่|กำหนด|งาน|นัด|เตือน.*ทุกวัน)/.test(text))) return null;
   if (!c.isOwner) return { reply: finalizeReply('เรื่องงานและตารางส่วนตัว เจ้าของกลุ่มเป็นผู้สั่งเปลี่ยนได้ครับ') };
 
   let snapshot: Json | null = null;
@@ -488,7 +522,7 @@ export async function handleSecretaryText(c: SecretaryCtx, raw: string): Promise
     }, t => `พัก “${t.title}” ไว้ก่อนครับ${text.includes('พรุ่งนี้') ? ` ผมจะเอากลับมาวันที่ ${thaiDate(tomorrow)}` : ''}`);
   }
 
-  if (singleLine && /(?:ยกเลิกงาน|ไม่ต้องทำแล้ว|ตัดงานนี้|^ยกเลิก$)/.test(text)) {
+  if (singleLine && /(?:ยกเลิกงาน|ไม่ต้องทำแล้ว|ตัดงานนี้|ลบ(?:งาน)?.*(?:ออก)?$|เอาออก.*$|^ยกเลิก$)/.test(text)) {
     return updateTask(c, text, await getSnapshot(), { state: 'CANCELLED' }, t => `ยกเลิกงาน “${t.title}” แล้วครับ`);
   }
 
