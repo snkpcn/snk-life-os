@@ -19,7 +19,22 @@ test('natural personal commands resolve the requested modules without requiring 
     'โปรเจคส่วนตัวถึงไหนแล้ว':'projects',
   };
   for (const [phrase,kind] of Object.entries(cases)) assert.equal(personalQuery(phrase)?.kind,kind,phrase);
-  for (const phrase of ['เมื่อกี้จ่ายค่าน้ำมัน 1800','พรุ่งนี้เตือนให้โทรหาช่างตอนบ่าย','คุยกับแม่อยู่']) assert.equal(personalQuery(phrase),null,phrase);
+  for (const phrase of ['เมื่อกี้จ่ายค่าน้ำมัน 1800','พรุ่งนี้เตือนให้โทรหาช่างตอนบ่าย','มีงานใหม่ต้องทำ ต้องอ่านสรุปงาน thesis ภายในพรุ่งนี้','คุยกับแม่อยู่']) assert.equal(personalQuery(phrase),null,phrase);
+  assert.equal(personalQuery('มีงานใหม่ไหม')?.kind,'tasks');
+});
+
+test('owner statement creates the thesis task in canonical SNK data, and the next question reads it', async()=>{
+  const h=await harness();
+  try {
+    await h.activate();
+    const saved=await h.say('มีงานใหม่ต้องทำ ต้องอ่านสรุปงาน thesis ภายในพรุ่งนี้');
+    assert.match(saved.reply??'',/จัดเข้าระบบแล้ว 1 รายการ/);
+    const rows=await h.db.query<{title:string;due_date:string}>("select title,due_date::text due_date from tasks where title ilike '%thesis%'");
+    assert.deepEqual(rows.rows,[{title:'อ่านสรุปงาน thesis',due_date:'2026-10-06'}]);
+    const listed=await h.say('มีอะไรค้าง');
+    assert.match(listed.reply??'',/อ่านสรุปงาน thesis/);
+    assert.doesNotMatch(listed.reply??'',/TAMMA/);
+  }finally{await h.db.close()}
 });
 
 test('acceptance: fresh real SQL backs summaries/tasks/money/schedule; business rows and other owners stay isolated', async t => {
@@ -166,12 +181,13 @@ test('an owner-issued dashboard code binds a room to SNK without a duplicate gro
 });
 
 test('SNK readiness is dependency-complete and independent of all Tamma endpoints/flags',async()=>{
-  const env={SNK_OS_SERVICE_ROLE_KEY:'test-secret',SNK_MONEY_ENABLED:'1',LINE_CHANNEL_SECRET:'test-line',LINE_CHANNEL_ACCESS_TOKEN:'test-token',SNK_OS_GROUP_ENCRYPTION_KEY:randomBytes(32).toString('base64url')};
+  const env={SNK_OS_SERVICE_ROLE_KEY:'test-secret',SNK_MONEY_ENABLED:'1',LINE_CHANNEL_SECRET:'test-line',LINE_CHANNEL_ACCESS_TOKEN:'test-token',GEMINI_API_KEY:'test-gemini',SNK_OS_GROUP_ENCRYPTION_KEY:randomBytes(32).toString('base64url')};
   const calls:string[]=[];
   const result=await personalReadiness(env,async(fn)=>{calls.push(fn);return {backend:true,money:true,secretary:true,snapshot:true,binding:true,active_group:true}});
   assert.equal(result.ready,true);assert.equal(result.pullOnly,true);assert.deepEqual(calls,['snk_personal_readiness']);
-  assert.doesNotMatch(JSON.stringify(result),/test-secret|test-line|test-token/);
+  assert.doesNotMatch(JSON.stringify(result),/test-secret|test-line|test-token|test-gemini/);
   assert.equal((await personalReadiness({...env,LINE_CHANNEL_SECRET:''},async()=>({backend:true,money:true,secretary:true,snapshot:true,binding:true,active_group:true}))).ready,false);
+  assert.equal((await personalReadiness({...env,GEMINI_API_KEY:''},async()=>({backend:true,money:true,secretary:true,snapshot:true,binding:true,active_group:true}))).ready,false);
   let queried=false;
   assert.equal((await personalReadiness({...env,SNK_OS_SUPABASE_URL:'https://tamma.supabase.co'},async()=>{queried=true})).ready,false);
   assert.equal(queried,false);
