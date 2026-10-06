@@ -25,7 +25,7 @@ export default function StarkPage() {
       const res = await fetch("/api/stark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, history: nextMessages, locale }),
+        body: JSON.stringify({ message: trimmed, requestId: crypto.randomUUID(), locale }),
       });
       const data = await res.json();
       setMessages((m) => [...m, { role: "assistant", content: data.reply || data.error || "…" }]);

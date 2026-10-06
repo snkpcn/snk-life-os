@@ -5,6 +5,7 @@ import { lineIdHash } from "@/lib/snk-money/_private-crypto";
 import { routeLineGroupEvents, verifyLineSignature } from "@/lib/snk-money/webhook.js";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 import { replyToLine } from '@/lib/snk-money/line-reply';
