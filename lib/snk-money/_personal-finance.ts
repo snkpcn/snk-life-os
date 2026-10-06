@@ -944,6 +944,11 @@ function accountHintIn(text: string, accounts: LedgerAccount[]): string | null {
 
 // ================================================================== slips
 
+async function clearPendingSlip(c: Ctx): Promise<void> {
+  const pending = await c.deps.ledger.pendingGet(c.actor);
+  if (pending && ['SLIP', 'SLIP_MANUAL'].includes(pending.kind)) await c.deps.ledger.pendingClear(c.actor);
+}
+
 async function handleImage(c: Ctx): Promise<string | null> {
   const { deps } = c;
   if (!deps.fetchImage || !deps.extractSlip) return reply('ตอนนี้ผมอ่านสลิปไม่ได้ครับ พิมพ์รายการมาแทนได้เลย เช่น “จ่ายประกัน 18500”');
@@ -951,6 +956,7 @@ async function handleImage(c: Ctx): Promise<string | null> {
 
   const dupFile = await deps.ledger.findDuplicateSlip({ fileHash: img.sha256 });
   if (dupFile.duplicate && dupFile.transaction) {
+    await clearPendingSlip(c);
     return reply(`สลิปนี้ผมบันทึกไว้แล้วครับ: ${txLine(dupFile.transaction)} ไม่บันทึกซ้ำ`);
   }
 
@@ -962,7 +968,13 @@ async function handleImage(c: Ctx): Promise<string | null> {
     await deps.ledger.pendingSet(c.actor, 'SLIP_MANUAL', { fileHash: img.sha256, messageId: c.messageId }, 60);
     return reply('อ่านยอดสลิปนี้ไม่สำเร็จครับ ยังไม่ได้บันทึก บอกยอดกับรายการต่อได้เลย เช่น “ค่าข้าวเที่ยง 209”');
   }
-  const reliableAmount = ext.confidence >= 0.7 && ext.amount_total !== null && ext.amount_total > 0 && ['transfer_slip', 'purchase_receipt', 'expense_receipt'].includes(ext.document_type);
+  if (!['transfer_slip', 'purchase_receipt', 'expense_receipt'].includes(ext.document_type)) {
+    // An ordinary image is not consent to start an expense. Keep the personal
+    // group quiet, and do not attach later comments to a non-financial image.
+    await clearPendingSlip(c);
+    return null;
+  }
+  const reliableAmount = ext.confidence >= 0.7 && ext.amount_total !== null && ext.amount_total > 0;
   if (!reliableAmount) {
     await deps.ledger.logAudit('SLIP_UNREADABLE', 'slip', null, c.actor, c.messageId, { reason: 'low_confidence', confidence: ext.confidence });
     await deps.ledger.pendingSet(c.actor, 'SLIP_MANUAL', { fileHash: img.sha256, messageId: c.messageId }, 60);
@@ -971,6 +983,7 @@ async function handleImage(c: Ctx): Promise<string | null> {
   const amount = ext.amount_total as number;
   const dup = await deps.ledger.findDuplicateSlip({ slipRef: ext.reference_number, amount, date: ext.document_date_local, payee: ext.merchant });
   if (dup.duplicate && dup.transaction) {
+    await clearPendingSlip(c);
     return reply(`เหมือนว่าสลิปนี้เคยบันทึกไว้แล้วครับ (${dup.reason === 'slip_ref' ? 'เลขอ้างอิงตรงกัน' : 'ยอด วันที่ และผู้รับตรงกัน'}): ${txLine(dup.transaction)} ผมไม่บันทึกซ้ำ ถ้าเป็นคนละรายการบอกได้เลยครับ`);
   }
 

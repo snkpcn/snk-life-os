@@ -122,6 +122,36 @@ test('unfinished slip never turns a new task into an expense', async()=>{
   }finally{await h.db.close()}
 });
 
+test('ordinary images stay quiet and never leave an expense capture waiting for later comments', async()=>{
+  const h=await ready({slips:{photo:{document_type:'other',amount_total:null,document_date_local:null,merchant:null,reference_number:null,bank:null,confidence:0.95},blur:'fail'}});
+  try {
+    await h.image('blur');
+    assert.equal((await h.ledger.pendingGet(h.deps.hash(OWNER)!))?.kind,'SLIP_MANUAL');
+    const photo=await h.image('photo');
+    assert.equal(photo.reply,null);
+    assert.equal(await h.ledger.pendingGet(h.deps.hash(OWNER)!),null);
+    await say(h,'ค่าข้าวเที่ยง');
+    await say(h,'209');
+    assert.equal(await h.count('transactions',"type='expense'"),0);
+  }finally{await h.db.close()}
+});
+
+test('duplicate receipt by reference closes an earlier unreadable-slip context without a second expense', async()=>{
+  const slip={document_type:'transfer_slip',amount_total:209,document_date_local:'2026-10-05',merchant:'ผู้รับ',reference_number:'ref-lunch-209',bank:'KBank',confidence:0.95};
+  const h=await ready({slips:{first:slip,resent:slip,blur:'fail'}});
+  try {
+    await say(h,'KBank ตอนนี้ 1000');
+    await h.image('first');
+    await say(h,'ค่าข้าวเที่ยง');
+    await h.image('blur');
+    assert.equal((await h.ledger.pendingGet(h.deps.hash(OWNER)!))?.kind,'SLIP_MANUAL');
+    const duplicate=await h.image('resent');
+    assert.match(duplicate.reply??'',/เลขอ้างอิงตรงกัน/);
+    assert.equal(await h.ledger.pendingGet(h.deps.hash(OWNER)!),null);
+    assert.equal(await h.count('transactions',"type='expense'"),1);
+  }finally{await h.db.close()}
+});
+
 test('05 "จ่ายแล้ว" resolves the due item, asks the account if unknown, and advances the next due date', async () => {
   const h = await ready();
   await say(h, 'SCB ตอนนี้ 20000');
