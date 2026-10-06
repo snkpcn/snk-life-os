@@ -74,3 +74,8 @@ test('only a verified owner in a bound personal group enters Stark; incoming rep
  await handlePersonalFinanceEvent({type:'message',source:{type:'group',groupId:'unknown',userId:OWNER},message:{id:'unknown1',type:'text',text:'สรุปมา'}},h.deps);assert.equal(entered,1);
  }finally{await h.db.close();}
 });
+
+test('Gemini failure has an actionable status without leaking request or key data',async()=>{
+ const f=fake();const reply=await runStark({message:'ข่าววันนี้มีอะไร',today:'2026-10-06',casualOwner:true,backend:f.backend,model:async()=>{throw new Error('gemini_http_401');}});
+ assert.match(reply,/API key \(401\)/);assert.match(reply,/gemini_http_401/);assert.doesNotMatch(reply,/secret|https?:\/\//i);
+});
