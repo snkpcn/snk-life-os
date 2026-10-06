@@ -87,8 +87,12 @@ export async function runStark(input:{message:string;today:string;casualOwner:bo
       contents.push({role:'user',parts:results});
     }
     throw new Error('agent_budget_exceeded');
-  }catch{
+  }catch(error){
+    const raw=error instanceof Error?error.message:'unknown';
+    const reason=/^gemini_http_(\d{3})$/.exec(raw)?.[0]||(['TimeoutError','AbortError'].includes(error instanceof Error?error.name:'')?'gemini_timeout':raw==='agent_budget_exceeded'?'agent_time_budget':raw==='gemini_no_response'?'gemini_empty_response':'agent_failed');
+    console.error('STARK_AGENT_FAILED',JSON.stringify({stage:raw.startsWith('gemini_http_')||raw.startsWith('gemini_')?'gemini':'agent',reason}));
+    const friendly=reason==='gemini_http_401'?'Gemini ปฏิเสธ API key (401)':reason==='gemini_http_403'?'API key ไม่มีสิทธิ์เรียก Gemini (403)':reason==='gemini_http_404'?'ไม่พบโมเดล Gemini ที่ตั้งค่าไว้ (404)':reason==='gemini_http_429'?'โควตาหรืออัตราเรียก Gemini เต็ม (429)':reason==='gemini_timeout'?'Gemini ใช้เวลาตอบนานเกินกำหนด':'ระบบ Gemini ยังตอบไม่สำเร็จ';
     if(receipts.length)return complete(`ผลที่หลังบ้านยืนยันแล้ว: ${receipts.map(r=>r.label||r.title||'อัปเดตรายการ').join(', ')} สำเร็จครับ ส่วนคำตอบเพิ่มเติมยังประมวลผลไม่สำเร็จ`);
-    return complete('ตอนนี้ผมติดต่อระบบคิดคำตอบไม่สำเร็จครับ ยังไม่มีผลยืนยันว่าผมเปลี่ยนข้อมูลให้ ลองบอกผมอีกครั้งได้ครับ');
+    return complete(`ตอนนี้${friendly}ครับ ยังไม่มีผลยืนยันว่าผมเปลี่ยนข้อมูลให้ (รหัส ${reason}) ลองอีกครั้งได้ครับ`);
   }
 }
