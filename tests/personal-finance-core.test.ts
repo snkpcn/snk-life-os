@@ -63,6 +63,13 @@ test('account resolution: exact, bank aliases, ambiguity and unknown', () => {
   assert.equal(resolveAccount('SCB', [acc('SCB เงินเดือน'), acc('SCB ออมทรัพย์')]).kind, 'ambiguous');
   assert.equal(knownAccountFromText('เข้า K+')?.name, 'KBank');
   assert.equal(knownAccountFromText('จ่ายค่าไฟ'), null);
+  const ownerNamedAccounts = [
+    { ...acc('ชานนท์ ปรีชานันท์'), institution: 'kasikorn' },
+    { ...acc('ชานนท์ ปรีชานันท์'), id: 'scb', institution: 'SCB' },
+  ];
+  assert.equal((resolveAccount('กสิกร', ownerNamedAccounts) as any).account.id, 'ชานนท์ ปรีชานันท์');
+  assert.equal((resolveAccount('SCB', ownerNamedAccounts) as any).account.id, 'scb');
+  assert.match(describeBalance(ownerNamedAccounts[0]), /KBank/);
 });
 
 test('categories, money and balance wording never present unknown as zero', () => {
