@@ -227,7 +227,7 @@ export const en = {
   },
   moneyPage: {
     lineTitle: "LINE · Thongthai",
-    lineIntro: "Connect your private SNK MONEY LINE group so Thongthai can keep your money and your day in order. The group is verified by a one-time code, never by its name.",
+    lineIntro: "Connect your personal LINE group to SNK Life OS. Ask Thongthai for a summary, pending tasks or spending. Answers use your personal backend; automatic messages are disabled.",
     lineConnected: "Connected group: {name}",
     lineConnectedSince: "Verified {date}",
     lineNotConnected: "No group connected yet.",
@@ -238,7 +238,7 @@ export const en = {
     lineCodeCommand: "ยืนยันกลุ่มการเงิน {code}",
     lineCodeExpires: "Valid for 15 minutes · works once",
     lineDisconnect: "Disconnect group",
-    lineDisconnectConfirm: "Disconnect this LINE group? Thongthai will stop sending briefs and reminders there.",
+    lineDisconnectConfirm: "Disconnect this LINE group? Personal SNK data will no longer be available there until you reconnect.",
     lineError: "Could not complete that. Please try again.",
     lineCoachTitle: "Latest briefs",
     lineCoachMORNING: "Morning brief",

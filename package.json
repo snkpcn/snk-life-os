@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 --test-timeout=120000 tests/*.test.ts tests/*.test.cjs",
+    "audit:snk-money": "node --import tsx --test --test-concurrency=1 --test-timeout=120000 tests/personal-finance-*.test.ts tests/personal-secretary.test.ts tests/private-runtime-migration.test.ts tests/snk-personal-pull.test.ts tests/snk*.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
@@ -19,6 +21,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
@@ -26,6 +29,7 @@
     "playwright": "^1.56.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.2"
   }
 }

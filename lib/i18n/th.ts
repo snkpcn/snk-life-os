@@ -229,7 +229,7 @@ export const th: Dict = {
   },
   moneyPage: {
     lineTitle: "LINE · ทองไทย",
-    lineIntro: "เชื่อมกลุ่ม LINE ส่วนตัว SNK MONEY เพื่อให้ทองไทยช่วยดูแลเงินและงานประจำวันของคุณ กลุ่มจะถูกยืนยันด้วยรหัสครั้งเดียว ไม่ใช่จากชื่อกลุ่ม",
+    lineIntro: "เชื่อมกลุ่ม LINE ส่วนตัวกับ SNK Life OS แล้วถามทองไทยได้เลย เช่น “สรุปมา” หรือ “มีอะไรค้าง” ข้อมูลมาจากหลังบ้านส่วนตัว และไม่มีข้อความอัตโนมัติ",
     lineConnected: "กลุ่มที่เชื่อมแล้ว: {name}",
     lineConnectedSince: "ยืนยันเมื่อ {date}",
     lineNotConnected: "ยังไม่ได้เชื่อมกลุ่ม",
@@ -240,7 +240,7 @@ export const th: Dict = {
     lineCodeCommand: "ยืนยันกลุ่มการเงิน {code}",
     lineCodeExpires: "ใช้ได้ 15 นาที · ใช้ได้ครั้งเดียว",
     lineDisconnect: "ยกเลิกการเชื่อมกลุ่ม",
-    lineDisconnectConfirm: "ยกเลิกการเชื่อมกลุ่ม LINE นี้ใช่ไหม ทองไทยจะหยุดส่งสรุปและแจ้งเตือนในกลุ่มนั้น",
+    lineDisconnectConfirm: "ยกเลิกการเชื่อมกลุ่ม LINE นี้ใช่ไหม กลุ่มนี้จะเรียกดูข้อมูลส่วนตัวจาก SNK ไม่ได้จนกว่าจะเชื่อมใหม่",
     lineError: "ทำรายการไม่สำเร็จ กรุณาลองใหม่",
     lineCoachTitle: "สรุปล่าสุด",
     lineCoachMORNING: "สรุปเช้า",
