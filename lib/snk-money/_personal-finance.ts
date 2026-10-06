@@ -12,6 +12,7 @@
 import {
   PF_CONFIRM_THRESHOLD,
   addDays,
+  accountLabel,
   bangkokToday,
   describeBalance,
   extractAmount,
@@ -445,15 +446,16 @@ function guessAccountKind(name: string): string {
 
 function balanceNote(account: LedgerAccount | null): string {
   if (!account) return '';
+  const label = accountLabel(account);
   if (account.balance_status === 'UNKNOWN' || numberOrNull(account.balance) === null) {
-    return `\n${account.name} ยังไม่มียอดที่คุณยืนยัน ผมเลยไม่คำนวณยอดคงเหลือให้ครับ (บอกยอดล่าสุดได้ เช่น “${account.name} เหลือ …”)`;
+    return `\n${label} ยังไม่มียอดที่คุณยืนยัน ผมเลยไม่คำนวณยอดคงเหลือให้ครับ (บอกยอดล่าสุดได้ เช่น “${label} เหลือ …”)`;
   }
-  return `\nยอด ${account.name} ตอนนี้ (คำนวณจากยอดที่ยืนยัน + รายการ) ${money(account.balance)}`;
+  return `\nยอด ${label} ตอนนี้ (คำนวณจากยอดที่ยืนยัน + รายการ) ${money(account.balance)}`;
 }
 
 async function pickAccount(c: Ctx, candidates: LedgerAccount[], intent: PfIntent, side: 'from' | 'to' | null = null): Promise<string> {
   await c.deps.ledger.pendingSet(c.actor, 'PICK_ACCOUNT', { intent, side, messageId: c.messageId }, 20);
-  return `มีบัญชีที่ใกล้เคียงหลายบัญชีครับ: ${candidates.map(a => a.name).join(', ')}\nหมายถึงบัญชีไหนครับ`;
+  return `มีบัญชีที่ใกล้เคียงหลายบัญชีครับ: ${candidates.map(accountLabel).join(', ')}\nหมายถึงบัญชีไหนครับ`;
 }
 
 async function execute(c: Ctx, intent: PfIntent, accounts: LedgerAccount[], recent: LedgerTransaction[]): Promise<string | null> {
@@ -465,14 +467,14 @@ async function execute(c: Ctx, intent: PfIntent, accounts: LedgerAccount[], rece
     case 'HELP': return HELP_TEXT;
     case 'NEGATED': return 'รับทราบครับ ผมไม่ได้บันทึกอะไรเพิ่ม';
     case 'UNSUPPORTED_BULK':
-      return 'ผมลบหรือล้างข้อมูลทั้งหมดให้ไม่ได้ครับ เพื่อความปลอดภัยของบัญชี ยกเลิกทีละรายการได้ เช่น “ยกเลิกรายการล่าสุด” (ทุกการแก้ไขมีประวัติเก็บไว้)';
+      return 'ผมยังไม่ได้ลบบัญชีหรือรายการใดครับ และแชทนี้ไม่มีคำสั่งลบบัญชีทั้งหมด ข้อมูลบัญชีและประวัติยังอยู่ครบครับ ถ้าจะตั้งยอดใหม่ บอกชื่อธนาคารกับยอดของแต่ละบัญชีได้เลย โดยไม่ต้องส่งเลขบัญชี ผมจะจับคู่บัญชีเดิมก่อนครับ';
     case 'UNCLEAR': return null;
 
     // -- owner states a balance ------------------------------------------------------------------------------
     case 'SET_BALANCE': {
       if (!intent.accountHint) {
         await ledger.pendingSet(c.actor, 'BALANCE_ACCOUNT', { amount: intent.amount, messageId: c.messageId }, 20);
-        const names = accounts.map(a => a.name);
+        const names = accounts.map(accountLabel);
         return `ยอด ${money(intent.amount)} นี้เป็นของบัญชีไหนครับ${names.length ? ` (${names.join(', ')})` : ' (พิมพ์ชื่อบัญชีได้เลย)'} ผมยังไม่ได้บันทึกอะไร`;
       }
       const target = await accountForHint(c, intent.accountHint, accounts, { create: true, kind: intent.accountKind });
@@ -481,11 +483,11 @@ async function execute(c: Ctx, intent: PfIntent, accounts: LedgerAccount[], rece
       const acct = target.account;
       const old = numberOrNull(acct.balance);
       if (!c.confirmed && old !== null && old >= 10_000 && Math.abs(intent.amount - old) / old >= 0.8) {
-        return askConfirm(c, { intent, confidence: 'high', source: 'rules' }, `ยอด ${acct.name} เดิม ${money(old)} แต่คุณบอก ${money(intent.amount)} ต่างกันมาก`);
+        return askConfirm(c, { intent, confidence: 'high', source: 'rules' }, `ยอด ${accountLabel(acct)} เดิม ${money(old)} แต่คุณบอก ${money(intent.amount)} ต่างกันมาก`);
       }
       const res = await ledger.setOwnerBalance({ accountId: acct.id, amount: intent.amount, actor: c.actor, message: c.messageId, idem: idem('bal') });
       const delta = numberOrNull(res.delta);
-      const lines = [`บันทึกยอด ${acct.name} = ${money(intent.amount)} (ยอดที่คุณยืนยัน) เรียบร้อยครับ`];
+      const lines = [`บันทึกยอด ${accountLabel(acct)} = ${money(intent.amount)} (ยอดที่คุณยืนยัน) เรียบร้อยครับ`];
       if (delta !== null && delta !== 0 && res.previous_balance !== null) {
         lines.push(`ต่างจากยอดที่ระบบมีไว้เดิม (${money(res.previous_balance)}) ${money(Math.abs(delta))} ผมบันทึกเป็นรายการ “ปรับยอด” เท่านั้น ไม่ได้สร้างรายจ่ายหรือรายรับให้ครับ`);
       }
@@ -518,7 +520,7 @@ async function execute(c: Ctx, intent: PfIntent, accounts: LedgerAccount[], rece
       const label = tx.category ?? intent.title ?? (intent.kind === 'EXPENSE' ? 'รายจ่าย' : 'รายรับ');
       if (tx.status === 'PENDING_CLARIFICATION') {
         await ledger.pendingSet(c.actor, 'ASSIGN_ACCOUNT', { txId: tx.id, messageId: c.messageId }, 60);
-        const names = accounts.map(a => a.name);
+        const names = accounts.map(accountLabel);
         return `บันทึก${intent.kind === 'EXPENSE' ? 'จ่าย' : 'รับ'} ${label} ${money(intent.amount)} ไว้ก่อนแล้วครับ ยังไม่ได้ตัดยอดบัญชีไหน\n${intent.kind === 'EXPENSE' ? 'ตัดจากบัญชีไหน' : 'เข้าบัญชีไหน'}ครับ${names.length ? ` (${names.join(', ')})` : ''} หรือพิมพ์ “ไม่ระบุ” ถ้าไม่เกี่ยวกับบัญชีที่ติดตามไว้`;
       }
       return `บันทึก${intent.kind === 'EXPENSE' ? 'จ่าย' : 'รับ'} ${label} ${money(intent.amount)}${res.account ? ` (${intent.kind === 'EXPENSE' ? 'จาก' : 'เข้า'} ${res.account.name})` : ''} เรียบร้อยครับ${balanceNote(res.account)}`;
@@ -949,7 +951,7 @@ async function resolvePending(c: Ctx, text: string, pending: Pending, accounts: 
 
 function accountHintIn(text: string, accounts: LedgerAccount[]): string | null {
   const m = findAccountMention(text, accounts);
-  if (m.kind === 'one') return m.account.name;
+  if (m.kind === 'one') return m.account.institution || m.account.name;
   if (m.kind === 'ambiguous') return text;
   return knownAccountFromText(text)?.name ?? null;
 }
