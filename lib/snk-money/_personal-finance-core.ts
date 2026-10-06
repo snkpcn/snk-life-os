@@ -7,11 +7,17 @@ export type PfRole = 'OWNER' | 'AUTHORIZED_FINANCE_MEMBER' | 'UNAUTHORIZED_MEMBE
 export type PfAccount = {
   id: string;
   name: string;
+  institution?: string | null;
   kind?: string;
   balance: number | string | null;
   balance_status: 'CONFIRMED' | 'DERIVED' | 'UNKNOWN';
   balance_confirmed_at?: string | null;
 };
+
+export function accountLabel(account: Pick<PfAccount, 'name' | 'institution'>): string {
+  const institution = account.institution?.trim();
+  return institution ? knownAccountFromText(institution)?.name ?? institution : account.name;
+}
 
 // ---------------------------------------------------------------- roles (fail closed)
 
@@ -214,7 +220,7 @@ export function resolveAccount(hint: string | null | undefined, accounts: PfAcco
   if (exact.length === 1) return { kind: 'one', account: exact[0] };
   const qg = groupOf(q);
   if (qg) {
-    const byGroup = accounts.filter(a => groupOf(a.name)?.canonical === qg.canonical || key(a.name).includes(key(qg.canonical)) || qg.aliases.some(al => key(a.name).includes(key(al))));
+    const byGroup = accounts.filter(a => [a.name, a.institution ?? ''].some(label => groupOf(label)?.canonical === qg.canonical || key(label).includes(key(qg.canonical)) || qg.aliases.some(al => key(label).includes(key(al)))));
     if (byGroup.length === 1) return { kind: 'one', account: byGroup[0] };
     // an alias ("ไทยพาณิชย์") prefers the account literally named by the canonical name ("SCB")
     const canonical = byGroup.filter(a => key(a.name) === key(qg.canonical));
@@ -302,12 +308,12 @@ export function thaiDate(ymd: string): string {
   return `${d} ${months[m - 1]}`;
 }
 
-export function describeBalance(account: Pick<PfAccount, 'name' | 'balance' | 'balance_status'>): string {
+export function describeBalance(account: Pick<PfAccount, 'name' | 'institution' | 'balance' | 'balance_status'>): string {
   if (account.balance_status === 'UNKNOWN' || numberOrNull(account.balance) === null) {
-    return `${account.name}: ยังไม่ทราบยอด (ยังไม่มียอดที่คุณยืนยัน)`;
+    return `${accountLabel(account)}: ยังไม่ทราบยอด (ยังไม่มียอดที่คุณยืนยัน)`;
   }
   const label = account.balance_status === 'CONFIRMED' ? 'ยอดที่คุณยืนยัน' : 'คำนวณจากยอดที่ยืนยัน + รายการที่บันทึก';
-  return `${account.name}: ${money(account.balance)} (${label})`;
+  return `${accountLabel(account)}: ${money(account.balance)} (${label})`;
 }
 
 export const PF_CONFIRM_THRESHOLD = 1_000_000;

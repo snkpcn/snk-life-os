@@ -20,6 +20,13 @@ test('fresh backend then tool read and cancel; conversation remains server-side'
  return ++turn===1?[{functionCall:{name:'read_os',args:{resource:'tasks'}}}]:turn===2?[{functionCall:{name:'update_record',args:{resource:'tasks',id,patch:{state:'CANCELLED'}}}}]:[{text:'ยกเลิกงานอ่าน thesis แล้วครับ'}];}});
  assert.match(reply,/ยกเลิก/);assert.deepEqual(f.operations,['read:overview','read:overview','read:tasks','update:tasks:CANCELLED']);
 });
+test('bulk account deletion is refused before model or any backend write',async()=>{
+ const f=fake();let modelCalls=0;
+ const reply=await runStark({message:'ตอนนี้ลบทุกบัญชีก่อน',today:'2026-10-06',casualOwner:true,backend:f.backend,model:async()=>{modelCalls++;return[{text:'ลบแล้วครับ'}];}});
+ assert.match(reply,/ยังไม่ได้ลบบัญชีใด/);
+ assert.equal(modelCalls,0);
+ assert.deepEqual(f.operations,['read:overview']);
+});
 test('unseen IDs cannot mutate; only finance tool reaches ledger; no push tool exists',async()=>{
  const f=fake();let n=0;
  await runStark({message:'ลบงาน',today:'2026-10-06',casualOwner:true,backend:f.backend,model:async(_,contents,tools)=>{assert.ok(!JSON.stringify(tools).match(/push|tamma/i));if(++n===1)return[{functionCall:{name:'update_record',args:{resource:'tasks',id,patch:{state:'CANCELLED'}}}}];assert.match(JSON.stringify(contents),/read_current_record_before_update/);return[{text:'ต้องเลือกงานก่อนครับ'}];}});

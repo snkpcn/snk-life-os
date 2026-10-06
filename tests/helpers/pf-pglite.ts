@@ -9,6 +9,7 @@ export const MIGRATION = join(process.cwd(), 'supabase/migrations/20261005130000
 export const MIGRATION_V2 = join(process.cwd(), 'supabase/migrations/20261005140000_snk_money_v2_coach_binding.sql');
 export const MIGRATION_V3 = join(process.cwd(), 'supabase/migrations/20261005150000_snk_secretary_v3.sql');
 export const MIGRATION_V4 = join(process.cwd(), 'supabase/migrations/20261006100000_snk_group_id_key_isolation.sql');
+export const MIGRATION_V5 = join(process.cwd(), 'supabase/migrations/20261006153000_finance_account_institution_context.sql');
 export const BASE_SCHEMA = join(process.cwd(), 'tests/fixtures/snk-os-base.sql');
 export const OWNER_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -31,6 +32,7 @@ export async function freshDb(): Promise<{ db: PGlite; rpc: Rpc; ledger: PfLedge
   await db.exec(readFileSync(MIGRATION_V2, 'utf8'));
   await db.exec(readFileSync(MIGRATION_V3, 'utf8'));
   await db.exec(readFileSync(MIGRATION_V4, 'utf8'));
+  await db.exec(readFileSync(MIGRATION_V5, 'utf8'));
   await db.query('insert into auth.users(id) values($1)', [OWNER_ID]);
   const rpc: Rpc = async (fn, args) => {
     const keys = Object.keys(args);

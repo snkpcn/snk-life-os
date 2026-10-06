@@ -104,7 +104,7 @@ function titleFrom(text: string): string | null {
 
 function accountHintFromAction(text: string, accounts: PfAccount[]): string | null {
   const m = findAccountMention(text, accounts);
-  if (m.kind === 'one') return m.account.name;
+  if (m.kind === 'one') return m.account.institution || m.account.name;
   const known = knownAccountFromText(text);
   if (known) return known.name;
   return null;
@@ -218,6 +218,9 @@ export function interpretWithRules(input: string, ctx: NluContext): Interpretati
   if (/(ช่วยอะไรได้บ้าง|ทำอะไรได้บ้าง|วิธีใช้|ใช้ยังไง|คำสั่งทั้งหมด|^help$|^เมนู$)/i.test(t)) return result({ kind: 'HELP' }, 'high');
 
   // -- high-risk bulk delete of a period (always confirmed by the dispatcher) -----------------------
+  if (/(?:ลบ|ล้าง|เคลียร์|รีเซ็ต|reset)\s*(?:ทุกบัญชี|บัญชีทุกบัญชี|บัญชีทั้งหมด|บัญชีธนาคารทั้งหมด|บัญชีในระบบทั้งหมด)|(?:ทุกบัญชี|บัญชีทั้งหมด|บัญชีธนาคารทั้งหมด).{0,12}(?:ลบ|ล้าง|เคลียร์|รีเซ็ต)/i.test(t)) {
+    return result({ kind: 'UNSUPPORTED_BULK' }, 'high');
+  }
   const bulk = t.match(/(?:ลบ|ยกเลิก|void)\s*(?:รายการ|ข้อมูล)?\s*ทั้งหมด\s*(เดือนนี้|เดือนที่แล้ว|เดือนก่อน|วันนี้|สัปดาห์นี้|อาทิตย์นี้)/i);
   if (bulk) return result({ kind: 'BULK_VOID', period: parsePeriod(bulk[1]) }, 'high');
 
@@ -340,6 +343,11 @@ export function interpretWithRules(input: string, ctx: NluContext): Interpretati
   }
 
   // -- owner states a balance -------------------------------------------------------
+  if (amount !== null && /(?:มี|เหลือ|คงเหลือ|ยอด)/u.test(t)
+      && !/(?:จ่าย|ซื้อ|ได้รับ|ได้เงิน|รับเงิน|โอน)/u.test(t)) {
+    const accountHint = accountHintFromAction(t, ctx.accounts);
+    if (accountHint) return result({ kind: 'SET_BALANCE', amount, accountHint, accountKind: knownAccountFromText(accountHint)?.kind ?? null }, 'high');
+  }
   const bal = BALANCE_VERB.exec(t);
   if (bal && amount !== null && !/(?:จ่าย|ซื้อ|ได้รับ|ได้เงิน|รับเงิน)/.test(t.slice(0, bal.index).replace(/ใช้จ่าย/g, ''))) {
     const afterVerb = amounts.find(a => a.index >= bal.index) ?? amounts[0];
