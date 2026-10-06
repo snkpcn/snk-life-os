@@ -84,6 +84,7 @@ export type SlipExtraction = {
 export type PfDeps = {
   /** Transport to the SNK LIFE OS ledger RPCs.  The owner is resolved from the verified binding, never from LINE. */
   rpc: Rpc;
+  starkAgent?: (input: {owner:string; actor:string; messageId:string; today:string; allowed:string[]; message:string; finance:(proposal:Record<string,any>)=>Promise<string|null>})=>Promise<string>;
   /** Optional operator-pinned owner (SNK_MONEY_OWNER_ID); enables the "owner types the phrase" activation path. */
   envOwnerId?: string | null;
   llm: LlmInterpreter | null;
@@ -248,6 +249,9 @@ export async function handlePersonalFinanceEvent(event: PfEvent, deps: PfDeps): 
       return { handled: true, reply: null };
     }
     if (event.message?.type === 'image') return { handled: true, reply: base.allowedModules.includes('money') ? await handleImage(base) : finalizeReply('กลุ่มนี้ยังไม่ได้เปิดสิทธิ์บันทึกเงินครับ') };
+    if (text && role === 'OWNER' && deps.starkAgent) {
+      return {handled:true,reply:await deps.starkAgent({owner:lookup.owner_id!,actor:`${actor}:line:${groupHash}`,messageId,today:base.today,allowed:base.allowedModules,message:rawText??text,finance:proposal=>handleText({...base,deps:{...runtime,personalRequestInterpreter:async()=>null,llm:async()=>proposal}},text,rawText??text)})};
+    }
     if (text) return { handled: true, reply: await handleText(base, text, rawText ?? text) };
     return { handled: true, reply: null };
   } catch (error) {
@@ -1095,6 +1099,11 @@ export async function defaultPersonalFinanceDeps(): Promise<PfDeps> {
   assertLedgerConfigured();
   return {
     rpc: supabaseRpc,
+    starkAgent: process.env.GEMINI_API_KEY && process.env.STARK_AGENT_ENABLED !== 'false' ? async input => {
+      const {runStark}=await import('../stark/agent');
+      const {createStarkBackend}=await import('../stark/backend');
+      return runStark({message:input.message,today:input.today,casualOwner:true,budgetMs:20000,backend:createStarkBackend(input)});
+    } : undefined,
     envOwnerId: configuredOwnerId(),
     llm: openAiInterpreter,
     now: () => new Date(),
@@ -1188,4 +1197,10 @@ export async function routePrivatePersonalEvent(
     return true;
   }
   return lookup.status === 'ACTIVE' || lookup.status === 'PENDING';
+}
+
+/** Authenticated web identity is resolved by the caller; uses the same personal ledger rules. */
+export async function starkWebFinance(owner:string,actor:string,messageId:string,message:string,allowed:string[],proposal:Record<string,any>){
+  const deps=await defaultPersonalFinanceDeps();
+  return handleText({allowedModules:allowed,deps:{...deps,ledger:new PfLedger(deps.rpc,owner),personalRequestInterpreter:async()=>null,llm:async()=>proposal},actor,role:'OWNER',messageId,today:bangkokToday(deps.now()),confirmed:false},normalizeText(message),message);
 }
