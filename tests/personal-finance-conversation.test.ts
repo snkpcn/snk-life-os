@@ -2,7 +2,7 @@
 // LINE group event -> authz -> interpreter -> real Postgres engine (PGlite running the production migration).
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { A, ids } from './helpers/pf-pglite';
+import { A, ids, OWNER_ID } from './helpers/pf-pglite';
 import { MEMBER, OWNER, STRANGER, assertPersona, harness, type Harness } from './helpers/pf-harness';
 
 async function ready(opts: Parameters<typeof harness>[0] = {}): Promise<Harness> {
@@ -261,6 +261,28 @@ test('14 unknown balance is reported as unknown, never as 0', async () => {
   assert.equal(await h.balanceOf('KBank'), null);
 });
 
+test('bank institution disambiguates same-named tracked accounts for an owner balance statement', async () => {
+  const h = await ready();
+  const inserted = await h.db.query<{ id: string }>(
+    `insert into financial_accounts(owner_id,name,account_type,institution)
+     values ($1,'ชานนท์ ปรีชานันท์','bank','kasikorn'),($1,'ชานนท์ ปรีชานันท์','bank','SCB') returning id`,
+    [OWNER_ID],
+  );
+  const reply = await say(h, 'บัญชี กสิกร มี 45 บาท');
+  assert.match(reply.reply!, /KBank.*45 บาท/);
+  const accounts = (await h.ledger.getAccounts()).accounts;
+  assert.equal(accounts.length, 2);
+  const kbank = accounts.find(account => account.id === inserted.rows[0].id);
+  const scb = accounts.find(account => account.id === inserted.rows[1].id);
+  assert.equal(kbank?.institution, 'kasikorn');
+  assert.equal(Number(kbank?.balance), 45);
+  assert.equal(kbank?.balance_status, 'CONFIRMED');
+  assert.equal(scb?.balance, null);
+  assert.equal(await h.count('transactions', "type in ('expense','income')"), 0);
+  assert.equal(await h.count('transactions', "type='adjustment'"), 1);
+  await h.db.close();
+});
+
 test('15 recurring creation sets the cadence, default reminders and next due date', async () => {
   const h = await ready();
   const r = await say(h, 'ค่าเน็ต 599 ทุกวันที่ 5');
@@ -365,7 +387,7 @@ test('very large amounts and drastic balance changes need explicit confirmation'
 test('bulk wipe requests are refused; balance without an account asks which one', async () => {
   const h = await ready();
   const wipe = await say(h, 'ลบทั้งหมด');
-  assert.match(wipe.reply!, /ไม่ได้ครับ/);
+  assert.match(wipe.reply!, /ยังไม่ได้ลบบัญชีหรือรายการใด/);
   const ask = await say(h, 'ตอนนี้เหลือ 50000');
   assert.match(ask.reply!, /บัญชีไหน/);
   assert.equal(await h.count('financial_accounts'), 0);
