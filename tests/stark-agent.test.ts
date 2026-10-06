@@ -31,6 +31,23 @@ test('successful writes survive model and memory errors without false failure or
  const reply=await runStark({message:'เพิ่มงานอ่านหนังสือ',today:'2026-10-06',casualOwner:true,backend:f.backend,model:async()=>{if(++n===1)return[{functionCall:{name:'create_record',args:{resource:'tasks',data:{title:'อ่านหนังสือ'}}}}];throw Error('model down');}});
  assert.match(reply,/อ่านหนังสือ.*สำเร็จ/);assert.equal(f.operations.filter(x=>x.startsWith('create')).length,1);
 });
+test('clear life goal is read for duplicates and saved before asking optional planning questions',async()=>{
+ const f=fake();f.backend.load=async()=>({history:[
+  {role:'user',content:'อยากเพิ่มเป้าหมายชีวิตอะ'},
+  {role:'assistant',content:'อยากให้ชีวิตมึงไปในทิศทางไหน?'},
+  {role:'user',content:'แต่งงานก่อน อายุ 35 เพิ่มไปเลย'},
+ ]});let turn=0;
+ const reply=await runStark({message:'แต่งงานก่อน อายุ 35 เพิ่มไปเลย',today:'2026-10-06',casualOwner:true,backend:f.backend,model:async(system,contents,tools)=>{
+  assert.match(system,/never ask for optional planning details before saving/i);
+  assert.match(system,/แต่งงานก่อนอายุ 35/);
+  if(++turn===1)return[{functionCall:{name:'read_os',args:{resource:'goals'}}}];
+  if(turn===2)return[{functionCall:{name:'create_record',args:{resource:'goals',data:{title:'แต่งงานก่อนอายุ 35',description:'เป้าหมายชีวิต: แต่งงานก่อนอายุ 35 ปี',level:'north_star',status:'active'}}}}];
+  return[{text:'บันทึกเป้าหมายแต่งงานก่อนอายุ 35 ลง SNK แล้ว มึงอยากให้ช่วยวางแผนต่อไหมครับ'}];
+ }});
+ assert.deepEqual(f.operations,['read:overview','read:goals','create:goals']);
+ assert.match(reply,/บันทึกเป้าหมายแต่งงานก่อนอายุ 35/);
+ assert.match(JSON.stringify(STARK_TOOLS.find((tool:any)=>tool.name==='create_record')),/leave unknown fields empty/);
+});
 test('Gemini transport uses function calling and preserves thought signatures',async()=>{
  const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test-secret';
  globalThis.fetch=async(_,init)=>{const payload=JSON.parse(String(init?.body));assert.equal(payload.toolConfig.functionCallingConfig.mode,'AUTO');assert.equal(payload.tools[0].functionDeclarations[0].name,'read_os');assert.ok(!String(init?.body).includes('test-secret'));return new Response(JSON.stringify({candidates:[{content:{parts:[{functionCall:{name:'read_os',args:{resource:'money'}},thoughtSignature:'keep-me'}]}}]}));};
