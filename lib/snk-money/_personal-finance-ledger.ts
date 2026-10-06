@@ -21,6 +21,7 @@ export class PfLedgerError extends Error {
 export type LedgerAccount = {
   id: string;
   name: string;
+  institution?: string | null;
   kind: string;
   balance: number | string | null;
   balance_status: 'CONFIRMED' | 'DERIVED' | 'UNKNOWN';
