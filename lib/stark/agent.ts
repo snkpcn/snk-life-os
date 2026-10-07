@@ -61,7 +61,8 @@ function starkGeminiModelCandidates() {
 }
 
 const RETRYABLE_GEMINI_STATUSES=new Set([404,408,429,500,502,503,504]);
-const GEMINI_MODEL_ATTEMPT_MAX_MS=12000;
+// LINE gives the whole owner request about 20 seconds; leave time for model fallbacks.
+const GEMINI_MODEL_ATTEMPT_MAX_MS=4500;
 const GEMINI_NEXT_MODEL_RESERVE_MS=1000;
 function isRetryableGeminiTransportError(error:unknown) {
   return error instanceof TypeError || (error instanceof Error&&['AbortError','TimeoutError'].includes(error.name));
@@ -79,10 +80,14 @@ function createGeminiStarkModel(): StarkModel {
   return async (system,contents,tools,timeout) => {
     const key=process.env.GEMINI_API_KEY; if(!key) throw new Error('gemini_not_configured');
     const models=selectedModel?[selectedModel]:starkGeminiModelCandidates();
-    const body=JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,tools:[{functionDeclarations:tools}],toolConfig:{functionCallingConfig:{mode:'AUTO'}},generationConfig:{maxOutputTokens:1200}});
     const started=Date.now();let lastFailure:unknown;
     for(let index=0;index<models.length;index++){
       const model=models[index];let retry=0;
+      // Gemini 3 defaults to medium/high reasoning, too slow for an interactive
+      // secretary turn. Low thinking keeps tool selection and short replies fast.
+      const generationConfig:Json={maxOutputTokens:1200};
+      if(model.startsWith('gemini-3'))generationConfig.thinkingConfig={thinkingLevel:'low'};
+      const body=JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,tools:[{functionDeclarations:tools}],toolConfig:{functionCallingConfig:{mode:'AUTO'}},generationConfig});
       while(true){
         const remaining=timeout-(Date.now()-started);
         if(remaining<=0)throw lastFailure||new Error('gemini_timeout');
