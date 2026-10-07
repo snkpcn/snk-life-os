@@ -61,7 +61,9 @@ function starkGeminiModelCandidates() {
 }
 
 const RETRYABLE_GEMINI_STATUSES=new Set([404,408,429,500,502,503,504]);
-const GEMINI_MODEL_ATTEMPT_MAX_MS=12000;
+// LINE gives the whole owner request about 20 seconds. A model must not consume
+// nearly all of that budget before the cascade gets a chance to try alternates.
+const GEMINI_MODEL_ATTEMPT_MAX_MS=4500;
 const GEMINI_NEXT_MODEL_RESERVE_MS=1000;
 function isRetryableGeminiTransportError(error:unknown) {
   return error instanceof TypeError || (error instanceof Error&&['AbortError','TimeoutError'].includes(error.name));
