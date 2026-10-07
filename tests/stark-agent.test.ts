@@ -36,7 +36,7 @@ test('unseen IDs cannot mutate; only finance tool reaches ledger; no push tool e
 test('successful writes survive model and memory errors without false failure or duplicate writes',async()=>{
  const f=fake();f.backend.save=async()=>{throw Error('memory unavailable');};let n=0;
  const reply=await runStark({message:'เพิ่มงานอ่านหนังสือ',today:'2026-10-06',casualOwner:true,backend:f.backend,model:async()=>{if(++n===1)return[{functionCall:{name:'create_record',args:{resource:'tasks',data:{title:'อ่านหนังสือ'}}}}];throw Error('model down');}});
- assert.match(reply,/อ่านหนังสือ.*สำเร็จ/);assert.equal(f.operations.filter(x=>x.startsWith('create')).length,1);
+ assert.match(reply,/บันทึกงาน “อ่านหนังสือ” ใน SNK แล้ว/);assert.equal(f.operations.filter(x=>x.startsWith('create')).length,1);assert.equal(n,1,'a confirmed write does not wait for another Gemini turn');
 });
 test('clear life goal is read for duplicates and saved before asking optional planning questions',async()=>{
  const f=fake();f.backend.load=async()=>({history:[
@@ -52,7 +52,7 @@ test('clear life goal is read for duplicates and saved before asking optional pl
   return[{text:'บันทึกเป้าหมายแต่งงานก่อนอายุ 35 ลง SNK แล้ว มึงอยากให้ช่วยวางแผนต่อไหมครับ'}];
  }});
  assert.deepEqual(f.operations,['read:overview','read:goals','create:goals']);
- assert.match(reply,/บันทึกเป้าหมายแต่งงานก่อนอายุ 35/);
+ assert.match(reply,/บันทึกเป้าหมาย “แต่งงานก่อนอายุ 35” ใน SNK แล้ว/);assert.equal(turn,2,'the receipt supplies the confirmation after the write');
  assert.match(JSON.stringify(STARK_TOOLS.find((tool:any)=>tool.name==='create_record')),/leave unknown fields empty/);
 });
 test('Gemini transport uses function calling and preserves thought signatures',async()=>{
@@ -90,9 +90,16 @@ test('fixed-time recurring commitments use the existing SNK schedule recurrence 
  const reply=await runStark({message:'โทรหาแฟนทุก 9 โมงเช้า',today:'2026-10-06',casualOwner:true,backend:f.backend,model:async(system,contents)=>{
   assert.match(system,/Recurring requests/);assert.ok(contents.some(c=>c.parts.some(p=>p.text==='เพิ่มงานที่ต้องทำทุกวันให้หน่อยสิ')));
   if(++turn===1)return[{functionCall:{name:'create_record',args:{resource:'schedule',data}}}];
-  return[{text:'บันทึกตารางโทรหาแฟนทุกวัน เวลา 09:00 น. แล้วครับ ตอนนี้ยังไม่มี LINE เตือนอัตโนมัติครับ'}];
+  return[{text:'ไม่ควรต้องเรียก Gemini ซ้ำหลัง backend ยืนยันแล้วครับ'}];
  }});
- assert.deepEqual(f.operations,['read:overview','create:schedule']);assert.match(reply,/09:00/);assert.match(reply,/ไม่มี LINE เตือนอัตโนมัติ/);
+ assert.deepEqual(f.operations,['read:overview','create:schedule']);assert.match(reply,/09:00/);assert.match(reply,/ไม่มี LINE เตือนอัตโนมัติ/);assert.equal(turn,1);
+});
+test('appointment capture confirms the real SNK schedule write within the LINE budget',async()=>{
+ const f=fake();let modelCalls=0;const realNow=Date.now;let now=1000;Date.now=()=>now;
+ try{
+  const reply=await runStark({message:'พรุ่งนี้มีนัดกับบัญชี 11.00',today:'2026-10-07',casualOwner:true,budgetMs:20000,backend:f.backend,model:async()=>{modelCalls++;now+=12000;return[{functionCall:{name:'create_record',args:{resource:'schedule',data:{title:'นัดบัญชี',start_at:'2026-10-08T11:00:00+07:00'}}}}];}});
+  assert.deepEqual(f.operations,['read:overview','create:schedule']);assert.match(reply,/นัด “นัดบัญชี”/);assert.match(reply,/8 ต\.ค\. 2569 11:00 น\./);assert.equal(modelCalls,1,'even after a 12-second Gemini turn, the SNK write and receipt finish without another model request');
+ }finally{Date.now=realNow;}
 });
 test('real SQL writes, idempotence, cross-owner isolation, context isolation and service-only grants',async()=>{
  const{db,rpc,ledger,owner}=await freshDb();
