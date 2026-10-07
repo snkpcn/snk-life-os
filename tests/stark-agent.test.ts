@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {runStark,geminiStarkModel,STARK_TOOLS,type StarkBackend,type StarkMessage} from '../lib/stark/agent';
+import {runStark,geminiStarkModel,STARK_TOOLS,STARK_GEMINI_COMPATIBLE_MODELS,STARK_GEMINI_STABLE_MODELS,type StarkBackend,type StarkMessage} from '../lib/stark/agent';
 import {createStarkBackend} from '../lib/stark/backend';
 import {freshDb,OWNER_ID} from './helpers/pf-pglite';
 const migration=readFileSync('supabase/migrations/20261006130955_stark_personal_agent.sql','utf8');
@@ -55,25 +55,53 @@ test('clear life goal is read for duplicates and saved before asking optional pl
  assert.match(reply,/บันทึกเป้าหมาย “แต่งงานก่อนอายุ 35” ใน SNK แล้ว/);assert.equal(turn,2,'the receipt supplies the confirmation after the write');
  assert.match(JSON.stringify(STARK_TOOLS.find((tool:any)=>tool.name==='create_record')),/leave unknown fields empty/);
 });
-test('Gemini transport uses function calling and preserves thought signatures',async()=>{
- const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test-secret';
- globalThis.fetch=async(_,init)=>{const payload=JSON.parse(String(init?.body));assert.equal(payload.toolConfig.functionCallingConfig.mode,'AUTO');assert.equal(payload.tools[0].functionDeclarations[0].name,'read_os');assert.ok(!String(init?.body).includes('test-secret'));return new Response(JSON.stringify({candidates:[{content:{parts:[{functionCall:{name:'read_os',args:{resource:'money'}},thoughtSignature:'keep-me'}]}}]}));};
- try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'เงิน'}]}],[{name:'read_os'}],1000);assert.equal(parts[0].thoughtSignature,'keep-me');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;}
+test('Stark exposes every current stable function-calling chat model and omits retired Gemini 2.0',()=>{
+ assert.deepEqual(STARK_GEMINI_STABLE_MODELS,[
+  'gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite',
+ ]);
+ assert.ok(STARK_GEMINI_COMPATIBLE_MODELS.includes('gemini-3.1-pro-preview'));
+ assert.ok(STARK_GEMINI_COMPATIBLE_MODELS.includes('gemini-2.5-pro'));
+ assert.ok(!STARK_GEMINI_COMPATIBLE_MODELS.some(model=>model.startsWith('gemini-2.0')));
 });
-test('Gemini retries transient 503 before any tools run, then returns the successful function call',async()=>{
- const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test-secret';let calls=0;
- globalThis.fetch=async()=>{
-  calls++;
-  if(calls===1)return new Response('overloaded',{status:503,headers:{'retry-after':'0'}});
-  const payload={candidates:[{content:{parts:[{functionCall:{name:'create_record',args:{resource:'tasks',data:{title:'เซ็นสัญญา'}}}}]}}]};
-  return new Response(JSON.stringify(payload));
+test('Gemini 3.8 transport uses function calling, keeps thought signatures and avoids legacy temperature tuning',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];process.env.STARK_GEMINI_MODEL='gemini-3.1-flash-lite';let url='';
+ globalThis.fetch=async(input,init)=>{url=String(input);const payload=JSON.parse(String(init?.body));assert.equal(payload.toolConfig.functionCallingConfig.mode,'AUTO');assert.equal(payload.tools[0].functionDeclarations[0].name,'read_os');assert.equal(payload.generationConfig.maxOutputTokens,1200);assert.ok(!('temperature'in payload.generationConfig));assert.ok(!String(init?.body).includes('test-secret'));assert.equal(new Headers(init?.headers).get('x-goog-api-key'),'test-secret');return new Response(JSON.stringify({candidates:[{content:{parts:[{functionCall:{id:'call-1',name:'read_os',args:{resource:'money'}},thoughtSignature:'keep-me'}]}}]}));};
+ try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'เงิน'}]}],[{name:'read_os'}],1000);assert.match(url,/models\/gemini-3\.8-flash:generateContent$/);assert.equal(parts[0].thoughtSignature,'keep-me');assert.equal(parts[0].functionCall?.id,'call-1');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
+});
+test('Gemini falls through to the next model on 503 before any SNK tool executes',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];const models:string[]=[];
+ globalThis.fetch=async(input)=>{const match=/models\/([^/:]+):generateContent/.exec(String(input));models.push(match?.[1]||'');if(models.length===1)return new Response('overloaded',{status:503});const payload={candidates:[{content:{parts:[{functionCall:{id:'create-1',name:'create_record',args:{resource:'tasks',data:{title:'เซ็นสัญญา'}}}}]}}]};return new Response(JSON.stringify(payload));};
+ try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'เพิ่มงาน'}]}],[{name:'create_record'}],3000);assert.deepEqual(models,['gemini-3.8-flash','gemini-3.7-flash']);assert.equal(parts[0].functionCall?.name,'create_record');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
+});
+test('Gemini falls through after a network failure before any SNK tool executes',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];const models:string[]=[];
+ globalThis.fetch=async(input)=>{const match=/models\/([^/:]+):generateContent/.exec(String(input));models.push(match?.[1]||'');if(models.length===1)throw new TypeError('fetch failed');return new Response(JSON.stringify({candidates:[{content:{parts:[{text:'network fallback works'}]}}]}));};
+ try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'สรุปมา'}]}],[],3000);assert.deepEqual(models,['gemini-3.8-flash','gemini-3.7-flash']);assert.equal(parts[0].text,'network fallback works');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
+});
+test('Gemini traverses the supported chat model pool after model-specific 404s',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];const models:string[]=[];
+ globalThis.fetch=async(input)=>{const match=/models\/([^/:]+):generateContent/.exec(String(input));models.push(match?.[1]||'');if(models.length<STARK_GEMINI_COMPATIBLE_MODELS.length)return new Response('not found',{status:404});return new Response(JSON.stringify({candidates:[{content:{parts:[{text:'fallback works'}]}}]}));};
+ try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'สรุปมา'}]}],[],3000);assert.deepEqual(models,STARK_GEMINI_COMPATIBLE_MODELS);assert.equal(parts[0].text,'fallback works');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
+});
+test('Gemini does not cascade on malformed requests or credential errors',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];let calls=0;
+ globalThis.fetch=async()=>{calls++;const status=[400,401,403][calls-1];return new Response('request rejected',{status});};
+ try{for(const status of [400,401,403]){await assert.rejects(geminiStarkModel('test',[{role:'user',parts:[{text:'สรุปมา'}]}],[],3000),new RegExp(`gemini_http_${status}`));assert.equal(calls,[400,401,403].indexOf(status)+1);}}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
+});
+test('Stark pins one Gemini model for the agent run and maps Gemini 3 function response IDs',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];const models:string[]=[];let turns=0;const f=fake();
+ globalThis.fetch=async(input,init)=>{
+  const match=/models\/([^/:]+):generateContent/.exec(String(input));models.push(match?.[1]||'');const request=JSON.parse(String(init?.body));assert.ok(!('temperature'in request.generationConfig));
+  if(++turns===1)return new Response(JSON.stringify({candidates:[{content:{parts:[{functionCall:{id:'read-tasks-1',name:'read_os',args:{resource:'tasks'}},thoughtSignature:'preserve-me'}]}}]}));
+  const responsePart=request.contents.at(-1)?.parts?.[0]?.functionResponse;assert.equal(responsePart.id,'read-tasks-1');assert.equal(responsePart.name,'read_os');
+  return new Response(JSON.stringify({candidates:[{content:{parts:[{text:'มีงานอ่าน thesis ครับ'}]}}]}));
  };
- try{const parts=await geminiStarkModel('test',[{role:'user',parts:[{text:'เพิ่มงาน'}]}],[{name:'create_record'}],3000);assert.equal(calls,2);assert.equal(parts[0].functionCall?.name,'create_record');}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;}
+ try{const reply=await runStark({message:'มีงานอะไรค้าง',today:'2026-10-07',casualOwner:true,backend:f.backend});assert.match(reply,/อ่าน thesis/);assert.deepEqual(models,['gemini-3.8-flash','gemini-3.8-flash']);assert.deepEqual(f.operations,['read:overview','read:tasks']);}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
 });
-test('Gemini stops after bounded transient retries and returns the actual 503 code',async()=>{
- const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test-secret';let calls=0;
- globalThis.fetch=async()=>{calls++;return new Response('overloaded',{status:503,headers:{'retry-after':'0'}});};
- try{await assert.rejects(geminiStarkModel('test',[{role:'user',parts:[{text:'สรุปมา'}]}],[],3000),/gemini_http_503/);assert.equal(calls,3);}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;}
+test('Gemini reports the last model outage when the compatible model pool is unavailable',async()=>{
+ const original=globalThis.fetch;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];let calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response('overloaded',{status:503});};
+ try{await assert.rejects(geminiStarkModel('test',[{role:'user',parts:[{text:'สรุปมา'}]}],[],3000),/gemini_http_503/);assert.equal(calls,STARK_GEMINI_COMPATIBLE_MODELS.length);}finally{globalThis.fetch=original;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
 });
 test('fixed-time recurring commitments use the existing SNK schedule recurrence without push delivery',async()=>{
  const calls:any[]=[];
