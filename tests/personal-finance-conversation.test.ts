@@ -95,7 +95,7 @@ test('unreadable slip keeps its context: purpose then amount completes one perso
   try {
     await say(h,'KBank ตอนนี้ 1000');
     const image=await h.image('receipt-209');
-    assert.match(image.reply??'',/บอกยอดกับรายการต่อได้เลย/);
+    assert.match(image.reply??'',/ลองส่งภาพชัด ๆ อีกครั้ง/);
     assert.equal(await h.count('transactions',"type='expense'"),0);
     const purpose=await say(h,'ค่าข้าวเที่ยง');
     assert.match(purpose.reply??'',/ค่าข้าวเที่ยง.*ยอดเท่าไร/);
@@ -108,6 +108,28 @@ test('unreadable slip keeps its context: purpose then amount completes one perso
     assert.equal(rows.rows[0].merchant,'ค่าข้าวเที่ยง');
     assert.ok(rows.rows[0].file_hash);
     assert.equal(await h.balanceOf('KBank'),791);
+  }finally{await h.db.close()}
+});
+
+test('new 500-baht slip replaces a failed prior slip and never carries the old example amount',async()=>{
+  const fresh={document_type:'transfer_slip',amount_total:500,document_date_local:'2026-10-07',merchant:'ผู้รับ',reference_number:'ref-500',bank:'KBank',confidence:0.98};
+  const h=await ready({slips:{old:'fail',fresh}});
+  try{
+    await say(h,'KBank ตอนนี้ 1000');
+    const failed=await h.image('old');
+    assert.match(failed.reply??'',/ยังไม่ได้บันทึก/);
+    assert.doesNotMatch(failed.reply??'',/209/);
+
+    const current=await h.image('fresh');
+    assert.match(current.reply??'',/500 บาท/);
+    assert.match(current.reply??'',/ค่าอะไร/);
+    const saved=await say(h,'ค่าข้าวเที่ยง');
+    assert.match(saved.reply??'',/500 บาท/);
+    const rows=await h.db.query<{amount:string;slip_ref:string}>('select amount::text amount,slip_ref from transactions where type=\'expense\'');
+    assert.equal(rows.rows.length,1);
+    assert.equal(Number(rows.rows[0].amount),500);
+    assert.equal(rows.rows[0].slip_ref,'ref-500');
+    assert.equal(await h.balanceOf('KBank'),500);
   }finally{await h.db.close()}
 });
 

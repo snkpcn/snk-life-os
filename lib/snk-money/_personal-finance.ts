@@ -977,10 +977,11 @@ async function handleImage(c: Ctx): Promise<string | null> {
   let ext: SlipExtraction;
   try {
     ext = await deps.extractSlip(img.bytes, img.mimeType);
-  } catch {
-    await deps.ledger.logAudit('SLIP_UNREADABLE', 'slip', null, c.actor, c.messageId, { reason: 'extraction_failed' });
+  } catch (error) {
+    const status = error instanceof Error ? error.message.match(/\b(408|429|500|502|503|504)\b/)?.[1] : null;
+    await deps.ledger.logAudit('SLIP_UNREADABLE', 'slip', null, c.actor, c.messageId, { reason: status ? 'gemini_http_' + status : 'extraction_failed' });
     await deps.ledger.pendingSet(c.actor, 'SLIP_MANUAL', { fileHash: img.sha256, messageId: c.messageId }, 60);
-    return reply('อ่านยอดสลิปนี้ไม่สำเร็จครับ ยังไม่ได้บันทึก บอกยอดกับรายการต่อได้เลย เช่น “ค่าข้าวเที่ยง 209”');
+    return reply('อ่านยอดสลิปนี้ไม่สำเร็จครับ ยังไม่ได้บันทึก ลองส่งภาพชัด ๆ อีกครั้ง หรือพิมพ์ชื่อรายการกับยอดตามจริงได้เลยครับ');
   }
   if (!['transfer_slip', 'purchase_receipt', 'expense_receipt'].includes(ext.document_type)) {
     // An ordinary image is not consent to start an expense. Keep the personal
@@ -992,7 +993,7 @@ async function handleImage(c: Ctx): Promise<string | null> {
   if (!reliableAmount) {
     await deps.ledger.logAudit('SLIP_UNREADABLE', 'slip', null, c.actor, c.messageId, { reason: 'low_confidence', confidence: ext.confidence });
     await deps.ledger.pendingSet(c.actor, 'SLIP_MANUAL', { fileHash: img.sha256, messageId: c.messageId }, 60);
-    return reply('อ่านยอดจากภาพนี้ไม่ชัดพอครับ ยังไม่ได้บันทึก บอกยอดกับรายการต่อได้เลย เช่น “ค่าข้าวเที่ยง 209”');
+    return reply('อ่านยอดจากภาพนี้ไม่ชัดพอครับ ยังไม่ได้บันทึก ลองส่งภาพชัด ๆ อีกครั้ง หรือพิมพ์ชื่อรายการกับยอดตามจริงได้เลยครับ');
   }
   const amount = ext.amount_total as number;
   const dup = await deps.ledger.findDuplicateSlip({ slipRef: ext.reference_number, amount, date: ext.document_date_local, payee: ext.merchant });
