@@ -81,7 +81,7 @@ test('Gemini falls through after a network failure before any SNK tool executes'
 test('Gemini timeouts leave budget for several model fallbacks',async()=>{
  const originalFetch=globalThis.fetch;const originalNow=Date.now;const originalTimeout=(AbortSignal as any).timeout;const key=process.env.GEMINI_API_KEY;const vars=['STARK_GEMINI_MODELS','STARK_GEMINI_MODEL','GEMINI_MODEL'].map(name=>[name,process.env[name]] as const);process.env.GEMINI_API_KEY='test-secret';for(const[name]of vars)delete process.env[name];const models:string[]=[];let now=1000;
  Date.now=()=>now;(AbortSignal as any).timeout=(ms:number)=>{now+=ms;return new AbortController().signal;};
- globalThis.fetch=async(input)=>{const match=/models\\/([^/:]+):generateContent/.exec(String(input));models.push(match?.[1]||'');throw new DOMException('timed out','TimeoutError');};
+ globalThis.fetch=async(input)=>{const match=/models\/([^/:]+):generateContent/.exec(String(input));models.push(match?.[1]||'');throw new DOMException('timed out','TimeoutError');};
  try{await assert.rejects(geminiStarkModel('test',[{role:'user',parts:[{text:'สรุปมา'}]}],[],12000),/TimeoutError|gemini_timeout/);assert.deepEqual(models.slice(0,4),['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash']);}
  finally{globalThis.fetch=originalFetch;Date.now=originalNow;(AbortSignal as any).timeout=originalTimeout;if(key===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=key;for(const[name,value]of vars){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
 });
