@@ -133,6 +133,32 @@ test('new 500-baht slip replaces a failed prior slip and never carries the old e
   }finally{await h.db.close()}
 });
 
+test('bare "รายรับ" answers the pending slip and increases income and net instead of running a stale summary', async () => {
+  const slip = { document_type: 'transfer_slip', amount_total: 500, document_date_local: '2026-10-07', merchant: 'MR. CHANON PREECHANAN', reference_number: 'income-500', bank: 'KBank', confidence: 0.98 };
+  let interpreted = 0;
+  const h = await ready({
+    slips: { income: slip },
+    personalRequestInterpreter: async (raw) => {
+      if (raw !== 'รายรับ') return null;
+      interpreted++;
+      return { action: 'query', query: { kind: 'summary', modules: ['money'], period: 'month' } };
+    },
+  });
+  try {
+    await say(h, 'KBank ตอนนี้ 1000');
+    await h.image('income');
+    const saved = await say(h, 'รายรับ');
+    assert.match(saved.reply ?? '', /บันทึกสลิปรายรับ 500 บาท/);
+    assert.equal(interpreted, 0, 'the pending slip must consume the short clarification before the agent interprets it as a query');
+    assert.equal(await h.count('transactions', "type='income' and amount=500 and status='CONFIRMED'"), 1);
+    assert.equal(await h.balanceOf('KBank'), 1500);
+    const summary = await h.ledger.getSummary('2026-10-01', '2026-10-31');
+    assert.equal(Number(summary.income), 500);
+    assert.equal(Number(summary.expense), 0);
+    assert.equal(Number(summary.net), 500);
+  } finally { await h.db.close(); }
+});
+
 test('unfinished slip never turns a new task into an expense', async()=>{
   const h=await ready({slips:{'bad-scan':'fail'}});
   try {
