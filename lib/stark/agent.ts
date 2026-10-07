@@ -61,7 +61,8 @@ function starkGeminiModelCandidates() {
 }
 
 const RETRYABLE_GEMINI_STATUSES=new Set([404,408,429,500,502,503,504]);
-// LINE gives the whole owner request about 20 seconds; leave time for model fallbacks.\nconst GEMINI_MODEL_ATTEMPT_MAX_MS=4500;
+// LINE gives the whole owner request about 20 seconds; leave time for model fallbacks.
+const GEMINI_MODEL_ATTEMPT_MAX_MS=4500;
 const GEMINI_NEXT_MODEL_RESERVE_MS=1000;
 function isRetryableGeminiTransportError(error:unknown) {
   return error instanceof TypeError || (error instanceof Error&&['AbortError','TimeoutError'].includes(error.name));
