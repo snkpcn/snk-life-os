@@ -71,6 +71,24 @@ function collectIds(value:any, resource:string, seen:Map<string,Set<string>>) {
   for(const [key,child]of Object.entries(value)) if(child&&typeof child==='object')collectIds(child,resource==='overview'?key:resource,seen);
 }
 const finish = (text:string) => {const out=text.trim().slice(0,4500).replace(/ค่ะ|คะ(?=[\s.!…]|$)/gu,'ครับ');return /ครับ[\s.!…]*$/.test(out)?out:`${out}ครับ`;};
+function confirmedWriteReply(actions:Array<{resource:string;data:Json;result:Json;operation:string}>) {
+  const describe=(action:{resource:string;data:Json;result:Json;operation:string})=>{
+    const {resource,data,result,operation}=action;
+    const title=String(data.title||data.name||result.label||'รายการ').trim();
+    const verb=operation==='update'?'อัปเดต':'บันทึก';
+    if(resource==='tasks'&&data.state==='CANCELLED')return `ยกเลิกงาน “${title}” ใน SNK แล้ว`;
+    if(resource==='tasks'&&data.state==='DONE')return `ทำเครื่องหมายงาน “${title}” ว่าเสร็จแล้วใน SNK`;
+    if(resource==='schedule'&&data.status==='cancelled')return `ยกเลิกนัด “${title}” ใน SNK แล้ว`;
+    if(resource==='schedule'&&data.start_at){
+      const date=new Date(data.start_at);
+      const when=Number.isFinite(date.getTime())?new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date).replace(/ น\.?$/u,''):'';
+      return `${verb}นัด “${title}”${when?` วันที่ ${when} น.`:''} ลงตารางส่วนตัว SNK แล้ว${data.recurrence?' (เป็นนัดซ้ำ และยังไม่มี LINE เตือนอัตโนมัติ)':''}`;
+    }
+    const target=resource==='tasks'?'งาน':resource==='goals'?'เป้าหมาย':resource==='projects'?'โปรเจกต์':resource==='notes'?'โน้ต':'รายการ';
+    return `${verb}${target} “${title}” ใน SNK แล้ว`;
+  };
+  return `${actions.map(describe).join('\n')}ครับ`;
+}
 function isBulkAccountRemoval(text:string) {
   const value=text.normalize('NFKC').replace(/\s+/gu,'');
   if(/(?:ไม่|อย่า|ห้าม).{0,5}(?:ลบ|ล้าง|เคลียร์)/u.test(value))return false;
@@ -95,15 +113,18 @@ export async function runStark(input:{message:string;today:string;casualOwner:bo
       const parts=await model(system,contents,STARK_TOOLS,Math.max(1000,Math.min(12000,deadline-Date.now())));
       const calls=parts.filter(p=>p.functionCall);contents.push({role:'model',parts});
       if(!calls.length){const text=parts.filter(p=>!p.thought).map(p=>p.text||'').join('');if(!text.trim())throw new Error('empty_reply');return complete(text);}
-      const results:GeminiPart[]=[];
+      const results:GeminiPart[]=[];const writes:Array<{resource:string;data:Json;result:Json;operation:string}>=[];
       for(const part of calls){
         const {name,args={}}=part.functionCall!;let result:Json;
         try{
-          if(Date.now()>deadline-8500)throw new Error('tool_time_budget_exceeded');
+          // SNK's LINE agent has a 20-second request budget. Keep enough time
+          // for the backend RPC and reply, rather than reserving most of the
+          // request for a second Gemini turn after a valid write proposal.
+          if(Date.now()>deadline-2500)throw new Error('tool_time_budget_exceeded');
           if(++operations>10)throw new Error('tool_budget_exceeded');
           if(name==='read_os'){if(!STARK_RESOURCES.includes(args.resource))throw new Error('unknown_resource');result=await backend.read(args.resource,args);collectIds(result,args.resource,seen);}
-          else if(name==='create_record'){result=await backend.create(args.resource,args.data||{},`stark:create:${operations}`);if(result.ok)receipts.push(result);}
-          else if(name==='update_record'){if(!seen.get(args.resource)?.has(args.id))throw new Error('read_current_record_before_update');result=await backend.update(args.resource,args.id,args.patch||{},`stark:update:${operations}`);if(result.ok)receipts.push(result);}
+          else if(name==='create_record'){const data=args.data||{};result=await backend.create(args.resource,data,`stark:create:${operations}`);if(result.ok){receipts.push(result);writes.push({resource:args.resource,data,result,operation:'create'});}}
+          else if(name==='update_record'){const data=args.patch||{};if(!seen.get(args.resource)?.has(args.id))throw new Error('read_current_record_before_update');result=await backend.update(args.resource,args.id,data,`stark:update:${operations}`);if(result.ok){receipts.push(result);writes.push({resource:args.resource,data,result,operation:'update'});}}
           else if(name==='finance_action'){const reply=await backend.finance(args);if(reply)return complete(reply);result={ok:false,error:'finance_intent_unclear',instruction:'Ask for missing details; nothing recorded.'};}
           else if(name==='market_data')result=await backend.market(args);
           else if(name==='news')result=await backend.news(args);
@@ -111,6 +132,9 @@ export async function runStark(input:{message:string;today:string;casualOwner:bo
         }catch(error){result={ok:false,error:error instanceof Error?error.message:'tool_failed'};}
         results.push({functionResponse:{name,response:result}});
       }
+      // Once the SNK RPC confirms a write, answer from that receipt. A second
+      // Gemini call must not turn a successful save into an apparent failure.
+      if(writes.length)return complete(confirmedWriteReply(writes));
       contents.push({role:'user',parts:results});
     }
     throw new Error('agent_budget_exceeded');
