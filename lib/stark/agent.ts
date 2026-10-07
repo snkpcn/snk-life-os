@@ -79,10 +79,16 @@ function createGeminiStarkModel(): StarkModel {
   return async (system,contents,tools,timeout) => {
     const key=process.env.GEMINI_API_KEY; if(!key) throw new Error('gemini_not_configured');
     const models=selectedModel?[selectedModel]:starkGeminiModelCandidates();
-    const body=JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,tools:[{functionDeclarations:tools}],toolConfig:{functionCallingConfig:{mode:'AUTO'}},generationConfig:{maxOutputTokens:1200}});
     const started=Date.now();let lastFailure:unknown;
     for(let index=0;index<models.length;index++){
       const model=models[index];let retry=0;
+      // Gemini 3 defaults to medium/high reasoning, which is wasteful for a
+      // latency-bound personal secretary turn (tool selection and short replies).
+      // Ask for low thinking on Gemini 3; older 2.5 fallbacks do not accept this
+      // field consistently, so leave their request shape unchanged.
+      const generationConfig:Json={maxOutputTokens:1200};
+      if(model.startsWith('gemini-3'))generationConfig.thinkingConfig={thinkingLevel:'low'};
+      const body=JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,tools:[{functionDeclarations:tools}],toolConfig:{functionCallingConfig:{mode:'AUTO'}},generationConfig});
       while(true){
         const remaining=timeout-(Date.now()-started);
         if(remaining<=0)throw lastFailure||new Error('gemini_timeout');
