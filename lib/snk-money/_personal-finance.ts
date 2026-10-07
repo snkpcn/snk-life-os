@@ -324,6 +324,21 @@ async function handleText(c: Ctx, text: string, rawText = text): Promise<string 
   if (/(?:ทำมา.?ชาติ|ตำมา.?ชาติ|tamma|อินทนิน|อินทนิล|inthanin|otop|ลูกค้า|ร้านอาหาร)/iu.test(text)) {
     return finalizeReply('เรื่องธุรกิจนี้ให้ถามทองไทยในกลุ่มทำมา-ชาติครับ กลุ่มนี้ใช้ข้อมูลส่วนตัวจาก SNK เท่านั้นครับ');
   }
+  // Resolve an active clarification before interpreting a short answer as a new query.
+  // For example, after a slip question, the owner's one-word "รายรับ" is a direction
+  // for that slip, not a request to summarize the ledger.
+  const [accountsRes, recent, pending] = await Promise.all([
+    ledger.getAccounts(),
+    ledger.getRecentTransactions(5),
+    ledger.pendingGet(c.actor),
+  ]);
+  const accounts = accountsRes.accounts;
+  if (pending) {
+    const handled = await resolvePending(c, text, pending, accounts);
+    if (handled.done) return handled.reply;
+    await ledger.pendingClear(c.actor);
+  }
+
   const request = await understandPersonalRequest(rawText, c.today, c.allowedModules, c.role === 'OWNER', c.deps.personalRequestInterpreter);
   if (request?.action === 'query') return answerPersonalQuery(ledger, rawText, c.today, c.allowedModules, c.role === 'OWNER', request.query);
   if (request && request.action !== 'none') {
@@ -337,19 +352,6 @@ async function handleText(c: Ctx, text: string, rawText = text): Promise<string 
   if ((financeCue && !c.allowedModules.includes('money')) || (!financeCue && secretaryCue && !c.allowedModules.includes(/นัด|ประชุม/u.test(text) ? 'schedule' : 'tasks'))) {
     return finalizeReply('กลุ่มนี้ยังไม่ได้เปิดสิทธิ์บันทึกข้อมูลหมวดที่ถามครับ');
   }
-  const [accountsRes, recent, pending] = await Promise.all([
-    ledger.getAccounts(),
-    ledger.getRecentTransactions(5),
-    ledger.pendingGet(c.actor),
-  ]);
-  const accounts = accountsRes.accounts;
-
-  if (pending) {
-    const handled = await resolvePending(c, text, pending, accounts);
-    if (handled.done) return handled.reply;
-    await ledger.pendingClear(c.actor);
-  }
-
   const secretary = await handleSecretaryText({
     ledger, actor: c.actor, messageId: c.messageId, today: c.today, isOwner: c.role === 'OWNER',
   }, rawText);
@@ -1037,20 +1039,23 @@ async function resolveSlip(c: Ctx, t: string, pending: Pending, accounts: Ledger
   }
   const income = /(รายรับ|ได้รับ|รับเงิน|เงินเข้า|โอนเข้า)/.test(t);
   const purpose = t.replace(/(?:จาก|ด้วย|ผ่าน|ตัด|เข้า)\s*\S+/g, ' ').replace(/(?:รายรับ|รายจ่าย|ค่า(?=\S)|นะ|ครับ)/g, m => (m === 'ค่า' ? 'ค่า' : ' ')).replace(/\s+/g, ' ').trim();
-  if (!purpose && !hint) return { done: false, reply: null };
+  // A bare income/expense direction is enough to classify a pending, verified slip.
+  // The purpose can remain generic; never reinterpret the owner's answer as a new query.
+  if (!purpose && !hint && !income && !/(รายจ่าย|ค่าใช้จ่าย)/.test(t)) return { done: false, reply: null };
   const target = await accountForHint(c, hint, accounts, { create: true, useSingle: true });
   if (target.kind === 'ambiguous') return done(`หมายถึงบัญชีไหนครับ: ${target.candidates.map(a => a.name).join(', ')}`);
   const accountId = target.kind === 'one' ? target.account.id : null;
   const title = purpose || null;
   const res = await ledger.createTransaction({
-    kind: income ? 'INCOME' : 'EXPENSE', amount: Number(p.amount), accountId, category: guessCategory(t) ?? (title ? title.slice(0, 40) : null),
-    payee: p.payee ?? title, note: title && p.payee ? title : null, occurredOn: p.date ?? null, actor: c.actor, message: c.messageId,
+    kind: income ? 'INCOME' : 'EXPENSE', amount: Number(p.amount), accountId,
+    category: guessCategory(t) ?? (title ? title.slice(0, 40) : income ? 'รายรับอื่น ๆ' : null),
+    payee: title ?? (income ? null : p.payee ?? null), note: title && p.payee ? title : null, occurredOn: p.date ?? null, actor: c.actor, message: c.messageId,
     idem: `${p.messageId ?? c.messageId}:slip`, slipRef: p.ref ?? null, fileHash: p.fileHash ?? null,
   });
   await ledger.pendingClear(c.actor);
   if (res.transaction.status === 'PENDING_CLARIFICATION') {
     await ledger.pendingSet(c.actor, 'ASSIGN_ACCOUNT', { txId: res.transaction.id, messageId: c.messageId }, 60);
-    return done(`บันทึกสลิป ${money(p.amount)}${title ? ` (${title})` : ''} ไว้แล้วครับ ตัดจากบัญชีไหนครับ หรือพิมพ์ “ไม่ระบุ”`);
+    return done(`บันทึกสลิป${income ? 'รายรับ' : 'รายจ่าย'} ${money(p.amount)}${title ? ` (${title})` : ''} ไว้แล้วครับ ${income ? 'ให้เข้าบัญชีไหน' : 'ตัดจากบัญชีไหน'}ครับ หรือพิมพ์ “ไม่ระบุ”`);
   }
   return done(`บันทึกสลิป${income ? 'รายรับ' : 'รายจ่าย'} ${money(p.amount)}${title ? ` (${title})` : ''} ${res.account ? `${income ? 'เข้า' : 'จาก'} ${res.account.name} ` : ''}เรียบร้อยครับ${balanceNote(res.account)}`);
 }
